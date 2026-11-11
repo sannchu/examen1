@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Inicio')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+<div class="container hero text-center py-4">
+    <h1 class="mt-3">Bienvenido a la Gestión de Biblioteca</h1>
+    <p class="lead mb-4">Administra tus libros y autores fácilmente</p>
+
+    <div class="row justify-content-center g-4">
+        <div class="col-md-4">
+            <div class="tarjeta bg-white p-4">
+                <i class="bi bi-book-fill fs-1"></i>
+                <h4 class="mt-2">Libros</h4>
+                <a th:href="@{/libros}" class="btn btn-primary mt-2">Gestionar libros</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="tarjeta bg-white p-4">
+                <i class="bi bi-person-fill fs-1"></i>
+                <h4 class="mt-2">Autores</h4>
+                <a th:href="@{/autores}" class="btn btn-primary mt-2">Gestionar autores</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>

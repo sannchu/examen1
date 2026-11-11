@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Error')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+<!-- La usan nuestro GlobalExceptionHandler (titulo, mensaje)
+     y también Spring Boot para errores no controlados (status, error) -->
+<div class="container" style="max-width: 720px;">
+    <div class="alert alert-danger shadow-sm">
+        <h4 class="alert-heading">
+            <i class="bi bi-exclamation-octagon"></i>
+<!--            operador Elvis o default expression (solo se comprueba que el valor sea nulo):   ${titulo} != null ? ${titulo} : (${status} + ' ' + ${error})-->
+<!--            En un ternario, Thymeleaf conviert l condición en booleano-->
+            <span th:text="${titulo} ?: (${status} + ' ' + ${error})">Error</span>
+        </h4>
+        <p class="mb-0" th:text="${mensaje} ?: 'Se ha producido un error inesperado.'">Detalle</p>
+    </div>
+    <a th:href="@{/}" class="btn btn-outline-primary"><i class="bi bi-house"></i> Volver al inicio</a>
+</div>
+
+</body>
+</html>

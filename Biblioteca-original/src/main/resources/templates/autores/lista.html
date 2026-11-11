@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Autores')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+<div class="container">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="titulo-seccion">✍️ Autores</h2>
+    <a th:href="@{/autores/nuevo}" class="btn btn-success">
+      <i class="bi bi-plus-lg"></i> Añadir autor
+    </a>
+  </div>
+
+  <div th:replace="~{fragments/layout :: alertas}"></div>
+
+  <table class="table table-bordered table-hover bg-white align-middle">
+    <thead class="table-dark">
+    <tr>
+      <th>Nombre</th>
+      <th class="col-accion">Editar</th>
+      <th class="col-accion">Borrar</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:if="${#lists.isEmpty(autores)}">
+      <td colspan="3" class="text-center text-muted">No hay autores</td>
+    </tr>
+    <tr th:each="a : ${autores}">
+      <td th:text="${a.nombre}">Nombre</td>
+      <td>
+        <a th:href="@{/autores/editar/{id}(id=${a.id})}"
+           class="btn btn-warning btn-sm" title="Editar">
+          <i class="bi bi-pencil"></i>
+        </a>
+      </td>
+      <td>
+        <form th:action="@{/autores/borrar/{id}(id=${a.id})}" method="post"
+              onsubmit="return confirm('Se borrarán también todos sus libros. ¿Continuar?');">
+          <button type="submit" class="btn btn-danger btn-sm" title="Borrar">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
+      </td>
+    </tr>
+    </tbody>
+  </table>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>

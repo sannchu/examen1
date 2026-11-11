@@ -1,0 +1,23 @@
+body {
+    background-color: #f8f9fa;
+}
+
+/* Portada */
+.hero h1 {
+    font-weight: 700;
+}
+
+.tarjeta {
+    border: 1px solid #e3e6ea;
+    border-radius: .5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .05);
+}
+
+/* Tablas */
+.titulo-seccion {
+    color: #0d6efd;
+}
+
+.col-accion {
+    width: 80px;
+}

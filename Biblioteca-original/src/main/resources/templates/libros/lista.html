@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Libros')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+<div class="container">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="titulo-seccion">📚 Libros</h2>
+        <a th:href="@{/libros/nuevo}" class="btn btn-success">
+            <i class="bi bi-plus-lg"></i> Añadir libro
+        </a>
+    </div>
+
+    <div th:replace="~{fragments/layout :: alertas}"></div>
+
+    <!-- Por GET: los filtros quedan en la URL y se conservan tras buscar -->
+    <form th:action="@{/libros}" th:object="${filtro}" method="get"
+          class="card card-body shadow-sm mb-3" novalidate>
+        <div class="row g-2 align-items-start">
+            <div class="col-md-4">
+                <label for="autorId" class="form-label">Autor</label>
+                <select th:field="*{autorId}" class="form-select"
+                        th:classappend="${#fields.hasErrors('autorId')} ? 'is-invalid'">
+                    <option value="">Todos los autores</option>
+                    <option th:each="a : ${autores}"
+                            th:value="${a.id}"
+                            th:text="${a.nombre}">Autor</option>
+                </select>
+                <div class="invalid-feedback" th:errors="*{autorId}">Error</div>
+            </div>
+            <div class="col-md-2">
+                <label for="anioDesde" class="form-label">Desde</label>
+                <input type="text" inputmode="numeric" th:field="*{anioDesde}" class="form-control"
+                       th:classappend="${#fields.hasErrors('anioDesde')} ? 'is-invalid'">
+                <div class="invalid-feedback" th:errors="*{anioDesde}">Error</div>
+            </div>
+            <div class="col-md-2">
+                <label for="anioHasta" class="form-label">Hasta</label>
+                <input type="text" inputmode="numeric" th:field="*{anioHasta}" class="form-control"
+                       th:classappend="${#fields.hasErrors('anioHasta')} ? 'is-invalid'">
+                <div class="invalid-feedback" th:errors="*{anioHasta}">Error</div>
+            </div>
+            <div class="col-md-4 d-flex gap-2 text-nowrap" style="padding-top: 2rem;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-funnel"></i> Filtrar
+                </button>
+                <a th:href="@{/libros}" class="btn btn-outline-secondary">Limpiar</a>
+            </div>
+        </div>
+    </form>
+
+    <!-- Si hay errores en el filtro, "libros" no está en el modelo -->
+    <th:block th:if="${libros != null}">
+
+        <p th:if="${#lists.isEmpty(libros)}" class="alert alert-info">
+            No hay libros con esos filtros
+        </p>
+
+        <th:block th:unless="${#lists.isEmpty(libros)}">
+            <p class="text-muted" th:text="|${#lists.size(libros)} libros encontrados|">0 libros</p>
+
+            <table class="table table-bordered table-hover bg-white align-middle">
+                <thead class="table-dark">
+                <tr>
+                    <th>ISBN</th>
+                    <th>Título</th>
+                    <th>Autor</th>
+                    <th>Publicación</th>
+                    <th class="col-accion">Editar</th>
+                    <th class="col-accion">Borrar</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="l : ${libros}">
+                    <td th:text="${l.isbn}">ISBN</td>
+                    <td th:text="${l.titulo}">Título</td>
+                    <td th:text="${l.autorNombre}">Autor</td>
+                    <td th:text="${#temporals.format(l.fechaPublicacion, 'dd/MM/yyyy')}">01/01/2000</td>
+                    <td>
+                        <a th:href="@{/libros/editar/{isbn}(isbn=${l.isbn})}"
+                           class="btn btn-warning btn-sm" title="Editar">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                    </td>
+                    <td>
+                        <form th:action="@{/libros/borrar/{isbn}(isbn=${l.isbn})}" method="post"
+                              onsubmit="return confirm('¿Seguro que quieres borrar este libro?');">
+                            <button type="submit" class="btn btn-danger btn-sm" title="Borrar">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </th:block>
+    </th:block>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>

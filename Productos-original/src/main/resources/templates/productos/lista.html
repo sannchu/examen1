@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Productos')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+<div class="container">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="titulo-seccion">📦 Productos disponibles</h2>
+        <a th:href="@{/productos/nuevo}" class="btn btn-success">
+            <i class="bi bi-plus-lg"></i> Añadir producto
+        </a>
+    </div>
+
+
+    <div th:replace="~{fragments/layout :: alertas}"></div>
+
+    <table class="table table-bordered table-hover bg-white align-middle">
+        <thead class="table-dark">
+        <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th>Precio</th>
+            <th>Fabricante</th>
+            <th class="col-accion">Editar</th>
+            <th class="col-accion">Borrar</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:if="${#lists.isEmpty(productos)}">
+            <td colspan="6" class="text-center text-muted">No hay productos</td>
+        </tr>
+        <tr th:each="p : ${productos}">
+            <td th:text="${p.codigo}">1</td>
+            <td th:text="${p.nombre}">Nombre</td>
+            <td th:text="${#numbers.formatDecimal(p.precio, 1, 2, 'POINT')}">0.00</td>
+            <!-- Navegamos por el objeto: Producto → Fabricante → nombre -->
+            <td th:text="${p.fabricante.nombre}">Fabricante</td>
+            <td>
+                <a th:href="@{/productos/editar/{codigo}(codigo=${p.codigo})}"
+                   class="btn btn-warning btn-sm" title="Editar">
+                    <i class="bi bi-pencil"></i>
+                </a>
+            </td>
+            <td>
+                <!-- Borrar = POST. Pedimos confirmación en el navegador -->
+                <form th:action="@{/productos/borrar/{codigo}(codigo=${p.codigo})}" method="post"
+                      onsubmit="return confirm('¿Seguro que quieres borrar este producto?');">
+                    <button type="submit" class="btn btn-danger btn-sm" title="Borrar">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>

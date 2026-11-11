@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Inicio')}"></head>
+<body>
+
+
+<div class="container py-5">
+    <div class="hero text-center">
+        <h1 class="display-4">LogísticaApp OFFLINE</h1>
+        <p class="lead text-muted mb-5">Gestión sencilla de productos y fabricantes</p>
+
+        <div class="row justify-content-center g-4">
+            <div class="col-md-5 col-lg-4">
+                <div class="card tarjeta h-100 p-3">
+                    <div class="card-body">
+                        <h3 class="text-primary">Productos</h3>
+                        <p class="text-muted">Consulta, edita o añade nuevos productos del almacén.</p>
+                        <a th:href="@{/productos}" class="btn btn-primary rounded-pill px-4">Gestionar productos</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-5 col-lg-4">
+                <div class="card tarjeta h-100 p-3">
+                    <div class="card-body">
+                        <h3 class="text-success">Fabricantes</h3>
+                        <p class="text-muted">Administra la lista de fabricantes disponibles.</p>
+                        <a th:href="@{/fabricantes}" class="btn btn-success rounded-pill px-4">Gestionar fabricantes</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

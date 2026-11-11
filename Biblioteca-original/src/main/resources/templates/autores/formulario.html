@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Autor')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+<div class="container" style="max-width: 640px;">
+
+  <h2 class="titulo-seccion mb-4"
+      th:text="${autorDto.id == null} ? 'Nuevo autor' : 'Editar autor'">
+    Autor
+  </h2>
+
+  <form th:action="@{/autores/guardar}" th:object="${autorDto}" method="post"
+        class="card card-body shadow-sm" novalidate>
+
+    <!-- El id viaja oculto: vacío en alta, relleno en edición -->
+    <input type="hidden" th:field="*{id}">
+
+    <div class="mb-4">
+      <label for="nombre" class="form-label">Nombre</label>
+      <input type="text" th:field="*{nombre}" class="form-control"
+             th:classappend="${#fields.hasErrors('nombre')} ? 'is-invalid'">
+      <div class="invalid-feedback" th:errors="*{nombre}">Error</div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Guardar</button>
+      <a th:href="@{/autores}" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>

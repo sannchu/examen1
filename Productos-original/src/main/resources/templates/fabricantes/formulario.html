@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Fabricante')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+<div class="container" style="max-width: 640px;">
+
+    <h2 class="text-success mb-4"
+        th:text="${fabricante.codigo == null} ? 'Nuevo fabricante' : ('Editar fabricante ' + ${fabricante.codigo})">
+        Fabricante
+    </h2>
+
+    <form th:action="@{/fabricantes/guardar}" th:object="${fabricante}" method="post"
+          class="card card-body shadow-sm" novalidate>
+
+        <input type="hidden" th:field="*{codigo}">
+
+        <div class="mb-4">
+            <label for="nombre" class="form-label">Nombre</label>
+            <input id="nombre" type="text" th:field="*{nombre}" class="form-control"
+                   th:classappend="${#fields.hasErrors('nombre')} ? 'is-invalid'">
+            <div class="invalid-feedback" th:errors="*{nombre}">Error</div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success"><i class="bi bi-save"></i> Guardar</button>
+            <a th:href="@{/fabricantes}" class="btn btn-outline-secondary">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>
