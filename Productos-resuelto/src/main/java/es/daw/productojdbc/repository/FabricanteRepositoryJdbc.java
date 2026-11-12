@@ -1,5 +1,6 @@
 package es.daw.productojdbc.repository;
 
+import es.daw.productojdbc.dto.FabricanteResumen;
 import es.daw.productojdbc.exception.AccesoDatosException;
 import es.daw.productojdbc.model.Fabricante;
 import lombok.RequiredArgsConstructor;
@@ -99,30 +100,77 @@ public class FabricanteRepositoryJdbc implements FabricanteRepository {
     }
 
 
+    // ----------- RETO 3 ------------------
+    @Override
+    public boolean existsByNombreIgnoreCase(String nombre) {
+        // En bd tengo ASUS y llega asus -> true
+        // En bd tengo ASUS y llega Asus -> true
+        // En bd tengo ASUS y llega ASUS -> true
+        // En bd tengo asus y llega ASUS  -> true
+        // .......
+        String sql = "SELECT 1 FROM fabricante WHERE LOWER(nombre) = LOWER(?)";
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next(); // TRUE si encuentra el fabricante con ese nombre...
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al comprobar el nombre del fabricante: " + nombre, e);
+        }
+
+    }
+
+    @Override
+    public boolean existsByNombreIgnoreCaseAndCodigoNot(String nombre, Integer codigo) {
+        String sql = "SELECT 1 FROM fabricante WHERE LOWER(nombre) = LOWER(?) AND codigo <> ?";
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            ps.setInt(2, codigo);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next(); // TRUE si encuentra el fabricante con ese nombre...
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al comprobar el nombre del fabricante: " + nombre, e);
+        }
+
+    }
+
+    // --------------- RETO 1 ----------------------------
+    @Override
+    public List<FabricanteResumen> findAllWithNumProductos() {
+        String sql = """
+                        SELECT f.codigo, f.nombre, COUNT(p.codigo) AS num_productos
+                        FROM fabricante f
+                        LEFT JOIN producto p ON p.codigo_fabricante = f.codigo
+                        GROUP BY f.codigo, f.nombre
+                        ORDER BY f.nombre                        
+                        """;
+
+        List<FabricanteResumen> fabricantes = new ArrayList<>();
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                fabricantes.add(new FabricanteResumen(
+                        rs.getInt("codigo"),
+                        rs.getString("nombre"),
+                        rs.getInt("num_productos")
+                ));
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al listar los fabricantes con su nº de productos", e);
+        }
+        return fabricantes;
+    }
+
+
+
+    // ----------------
     private Fabricante mapRow(ResultSet rs) throws SQLException {
         return new Fabricante(
                 rs.getInt("codigo"),
                 rs.getString("nombre"));
-    }
-
-    @Override
-    public java.util.List<es.daw.productojdbc.dto.FabricanteResumen> findAllConNumeroProductos() {
-        String sql = "SELECT f.codigo, f.nombre, COUNT(p.codigo) AS total FROM fabricante f LEFT JOIN producto p ON p.codigo_fabricante = f.codigo GROUP BY f.codigo, f.nombre ORDER BY f.nombre";
-        java.util.List<es.daw.productojdbc.dto.FabricanteResumen> lista = new java.util.ArrayList<>();
-        try (Connection con = dataSource.getConnection(); PreparedStatement ps = con.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) lista.add(new es.daw.productojdbc.dto.FabricanteResumen(rs.getInt("codigo"), rs.getString("nombre"), rs.getInt("total")));
-            return lista;
-        } catch (SQLException e) { throw new AccesoDatosException("Error al contar productos", e); }
-    }
-    @Override
-    public boolean existsByNombreIgnoreCase(String nombre) { return existeNombre(nombre, null); }
-    @Override
-    public boolean existsByNombreIgnoreCaseAndCodigoNot(String nombre, Integer codigo) { return existeNombre(nombre, codigo); }
-    private boolean existeNombre(String nombre, Integer codigo) {
-        String sql = "SELECT 1 FROM fabricante WHERE LOWER(nombre) = LOWER(?)" + (codigo == null ? "" : " AND codigo <> ?");
-        try (Connection con = dataSource.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, nombre); if (codigo != null) ps.setInt(2, codigo);
-            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
-        } catch (SQLException e) { throw new AccesoDatosException("Error al comprobar el nombre", e); }
     }
 }

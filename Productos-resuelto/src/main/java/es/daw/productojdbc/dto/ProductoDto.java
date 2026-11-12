@@ -2,10 +2,7 @@ package es.daw.productojdbc.dto;
 
 import es.daw.productojdbc.model.Fabricante;
 import es.daw.productojdbc.model.Producto;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -18,7 +15,7 @@ import lombok.NoArgsConstructor;
  */
 @Data // añade getter, setter, toString, equals, hashcode, contructor para atributos final
 @NoArgsConstructor
-public class ProductoForm {
+public class ProductoDto {
 
     private Integer codigo;            // null = alta, con valor = edición
 
@@ -30,21 +27,21 @@ public class ProductoForm {
     @Positive(message = "El precio debe ser mayor que 0")
     private Double precio;
 
-    @NotNull(message = "El stock es obligatorio")
-    @jakarta.validation.constraints.PositiveOrZero(message = "El stock no puede ser negativo")
-    private Integer stock;
-
     @NotNull(message = "Selecciona un fabricante")
     private Integer codigoFabricante;
 
 
+    // RETO 4
+    @NotNull(message ="El stock es obligatorio")
+    @Min(value = 0, message = "El stock no puede ser negativo")
+    private Integer stock;
 
 
 
     // ----------- MAPEO ----------
     /** Producto (modelo) → formulario (vista). Se usa al editar. */
-    public static ProductoForm toDto(Producto p) {
-        ProductoForm form = new ProductoForm();
+    public static ProductoDto toDto(Producto p) {
+        ProductoDto form = new ProductoDto();
         form.setCodigo(p.getCodigo());
         form.setNombre(p.getNombre());
         form.setPrecio(p.getPrecio());

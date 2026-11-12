@@ -5,8 +5,9 @@ import lombok.Data;
 
 // ---------------- RETO 1 --------------
 
-@Data
+@Data //solo mete constructor de finals
 @AllArgsConstructor
+//@NoArgsConstructor
 public class FabricanteResumen {
 
     private Integer codigo;

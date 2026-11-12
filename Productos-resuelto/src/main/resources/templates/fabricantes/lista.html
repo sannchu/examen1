@@ -20,7 +20,9 @@
         <tr>
             <th>Código</th>
             <th>Nombre</th>
-            <th>Productos</th>
+
+            <!-- RETO 1 -->
+            <th>Num productos</th>
 
             <th class="col-accion">Editar</th>
             <th class="col-accion">Borrar</th>
@@ -32,11 +34,17 @@
             <td colspan="5" class="text-center text-muted">No hay fabricantes</td>
         </tr>
         <tr th:each="f : ${fabricantes}">
-            <td th:text="${f.codigo}">1</td>
-            <td th:text="${f.nombre}">Nombre</td>
-            <td><a th:href="@{/fabricantes/{codigo}/productos(codigo=${f.codigo})}" th:text="${f.numProductos}">0</a></td>
+            <td th:text="${f.codigo}">xxxxx</td>
 
+<!--            <td th:text="${f.nombre}">xxxx</td>-->
+            <td>
+                <a th:href="@{/fabricantes/{codigo}/productos(codigo=${f.codigo})}"
+                   th:text="${f.nombre}">Nombre</a>
+            </td>
 
+            <!-- RETO 1 -->
+            <td th:text="${f.numProductos}"
+                th:classappend="${f.numProductos > 0}? 'text-bg-primary':'text-bg-secondary'">x</td>
 
             <td>
                 <a th:href="@{/fabricantes/editar/{codigo}(codigo=${f.codigo})}"
@@ -45,12 +53,9 @@
                 </a>
             </td>
             <td>
-
-
-
                 <form th:action="@{/fabricantes/borrar/{codigo}(codigo=${f.codigo})}" method="post"
                       onsubmit="return confirm('¿Seguro que quieres borrar este fabricante?');">
-                    <button type="submit" class="btn btn-danger btn-sm" title="Borrar">
+                    <button type="submit" class="btn btn-danger btn-sm" title="Borrar" th:disabled="${f.numProductos > 0}">
                         <i class="bi bi-trash"></i>
                     </button>
                 </form>

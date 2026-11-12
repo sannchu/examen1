@@ -7,11 +7,11 @@
 <div class="container" style="max-width: 640px;">
 
     <h2 class="text-success mb-4"
-        th:text="${fabricante.codigo == null} ? 'Nuevo fabricante' : ('Editar fabricante ' + ${fabricante.codigo})">
+        th:text="${fabricanteDto.codigo == null} ? 'Nuevo fabricante' : ('Editar fabricante ' + ${fabricanteDto.codigo})">
         Fabricante
     </h2>
 
-    <form th:action="@{/fabricantes/guardar}" th:object="${fabricante}" method="post"
+    <form th:action="@{/fabricantes/guardar}" th:object="${fabricanteDto}" method="post"
           class="card card-body shadow-sm" novalidate>
 
         <input type="hidden" th:field="*{codigo}">

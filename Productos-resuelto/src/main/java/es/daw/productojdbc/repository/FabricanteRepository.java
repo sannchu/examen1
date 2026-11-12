@@ -1,9 +1,21 @@
 package es.daw.productojdbc.repository;
 
+import es.daw.productojdbc.dto.FabricanteResumen;
 import es.daw.productojdbc.model.Fabricante;
 
+import java.util.List;
+
 public interface FabricanteRepository extends GenericRepository<Fabricante, Integer> {
-    java.util.List<es.daw.productojdbc.dto.FabricanteResumen> findAllConNumeroProductos();
-    boolean existsByNombreIgnoreCase(String nombre);
+
+    //------------ RETO 3 ----------------
+    public abstract boolean existsByNombreIgnoreCase(String nombre);
+
     boolean existsByNombreIgnoreCaseAndCodigoNot(String nombre, Integer codigo);
+
+    // -----------------------------------------
+
+    // ------------- RETO 1 -------------
+    List<FabricanteResumen> findAllWithNumProductos();
+
+
 }

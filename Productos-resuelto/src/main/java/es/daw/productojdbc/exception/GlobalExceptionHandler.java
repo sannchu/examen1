@@ -32,4 +32,13 @@ public class GlobalExceptionHandler {
         model.addAttribute("mensaje", ex.getMessage());
         return "error";
     }
+
+    // ES ADECUADO UN MANEJADOR GLOGAL!!!!
+//    @ExceptionHandler(FabricanteDuplicadoException.class)
+//    @ResponseStatus(HttpStatus.BAD_REQUEST) //?????????? cúal sería el código más adecuado??
+//    public String fabricanteDuplicado(FabricanteDuplicadoException ex, Model model) {
+//        model.addAttribute("titulo", "No encontrado");
+//        model.addAttribute("mensaje", ex.getMessage());
+//        return "error";
+//    }
 }

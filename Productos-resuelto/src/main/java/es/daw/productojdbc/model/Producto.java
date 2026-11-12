@@ -19,6 +19,8 @@ public class Producto {
     private Integer codigo;
     private String nombre;
     private double precio;
-    private int stock;
+
+    private int stock; // RETO 4
+
     private Fabricante fabricante;
 }

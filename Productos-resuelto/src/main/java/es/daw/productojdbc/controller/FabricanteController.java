@@ -1,9 +1,13 @@
 package es.daw.productojdbc.controller;
 
+import es.daw.productojdbc.dto.FabricanteDto;
 import es.daw.productojdbc.exception.FabricanteConProductosException;
+import es.daw.productojdbc.exception.FabricanteDuplicadoException;
 import es.daw.productojdbc.model.Fabricante;
 import es.daw.productojdbc.service.FabricanteService;
+import es.daw.productojdbc.service.ProductoService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -12,44 +16,56 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
 @RequestMapping("/fabricantes")
+@RequiredArgsConstructor
 public class FabricanteController {
 
     private final FabricanteService fabricanteService;
-    private final es.daw.productojdbc.service.ProductoService productoService;
+    private final ProductoService productoService;
 
-    public FabricanteController(FabricanteService fabricanteService, es.daw.productojdbc.service.ProductoService productoService) {
-        this.fabricanteService = fabricanteService;
-        this.productoService = productoService;
-    }
+//    public FabricanteController(FabricanteService fabricanteService) {
+//
+//        this.fabricanteService = fabricanteService;
+//    }
 
     @GetMapping
     public String listar(Model model) {
-        model.addAttribute("fabricantes", fabricanteService.listarResumen());
+
+        //model.addAttribute("fabricantes", fabricanteService.listar());
+
+        // ------------ RETO 1 --------------
+        model.addAttribute("fabricantes",fabricanteService.findAllWithNumProductos());
+
         return "fabricantes/lista";
 
     }
 
-    @GetMapping("/{codigo}/productos")
-    public String productos(@PathVariable Integer codigo, Model model) {
-        model.addAttribute("fabricante", fabricanteService.buscarPorCodigo(codigo));
-        model.addAttribute("productos", productoService.listarPorFabricante(codigo));
-        return "fabricantes/productos";
-    }
-
     @GetMapping("/nuevo")
     public String nuevo(Model model) {
-        model.addAttribute("fabricante", new Fabricante());
+        model.addAttribute("fabricanteDto", new FabricanteDto());
         return "fabricantes/formulario";
     }
 
     @GetMapping("/editar/{codigo}")
     public String editar(@PathVariable Integer codigo, Model model) {
-        model.addAttribute("fabricante", fabricanteService.buscarPorCodigo(codigo));
+        model.addAttribute("fabricanteDto", FabricanteDto.toDto(fabricanteService.buscarPorCodigo(codigo)));
         return "fabricantes/formulario";
     }
 
+    // ----- RETO 2 ----
+    @GetMapping("/{codigo}/productos")
+    public String productosDelFabricante(@PathVariable("codigo") Integer codigo, Model model) {
+
+        model.addAttribute("fabricante",fabricanteService.buscarPorCodigo(codigo));
+        model.addAttribute("productos",productoService.listarPorFabricante(codigo));
+
+        return "fabricantes/productosDelFabricante";
+
+    }
+
+
+
     @PostMapping("/guardar")
-    public String guardar(@Valid @ModelAttribute Fabricante fabricante,
+    public String guardar(@Valid @ModelAttribute FabricanteDto fabricanteDto,
                           BindingResult result,
                           RedirectAttributes redirectAttributes) {
 
@@ -58,24 +74,25 @@ public class FabricanteController {
         }
 
         try {
-        if (fabricante.getCodigo() == null) {
-            fabricanteService.crear(fabricante);
-            redirectAttributes.addFlashAttribute("mensaje",
-                    "Fabricante creado con código " + fabricante.getCodigo());
-        } else {
-            fabricanteService.actualizar(fabricante);
-            redirectAttributes.addFlashAttribute("mensaje",
-                    "Fabricante " + fabricante.getCodigo() + " actualizado");
+            if (fabricanteDto.getCodigo() == null) {
+                Fabricante fabricante = fabricanteService.crear(FabricanteDto.toModelEntity(fabricanteDto));
+                redirectAttributes.addFlashAttribute("mensaje",
+                        "Fabricante creado con código " + fabricante.getCodigo());
+            } else {
+                Fabricante fabricante = fabricanteService.actualizar(FabricanteDto.toModelEntity(fabricanteDto));
+                redirectAttributes.addFlashAttribute("mensaje",
+                        "Fabricante " + fabricante.getCodigo() + " actualizado");
+            }
         }
-        } catch (es.daw.productojdbc.exception.FabricanteDuplicadoException e) {
-            result.rejectValue("nombre", "duplicado", e.getMessage());
+        catch (FabricanteDuplicadoException e) {
+            result.rejectValue("nombre", "", e.getMessage());
             return "fabricantes/formulario";
         }
         return "redirect:/fabricantes";
     }
 
     @PostMapping("/borrar/{codigo}")
-    public String borrar(@PathVariable Integer codigo,
+    public String borrar(@PathVariable("codigo") Integer codigo,
                          RedirectAttributes redirectAttributes) {
         try {
             fabricanteService.borrar(codigo);

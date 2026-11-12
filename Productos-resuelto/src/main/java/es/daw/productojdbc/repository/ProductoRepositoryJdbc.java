@@ -99,6 +99,7 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
             ps.setDouble(2, producto.getPrecio());
             ps.setInt(3, producto.getStock());
             ps.setInt(4, producto.getFabricante().getCodigo());
+
             ps.executeUpdate();
 
             // Recuperamos el código que ha generado AUTO_INCREMENT y se lo asignamos al objeto
@@ -158,6 +159,29 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
         }
     }
 
+    // ----- RETO 2 ----
+    @Override
+    public List<Producto> findByFabricanteCodigo(Integer codigoFabricante) {
+        String sql = SELECT_BASE + "WHERE p.codigo_fabricante = ? ORDER BY p.nombre"; // por defecto es ASC
+
+        List<Producto> productos = new ArrayList<>();
+
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, codigoFabricante);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    productos.add(mapRow(rs));
+                }
+
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al listar los productos del fabricante " + codigoFabricante, e);
+        }
+
+        return productos;
+    }
+
     // ---------------------------------------------------------------- Mapeo fila → objeto
     private Producto mapRow(ResultSet rs) throws SQLException {
         Fabricante fabricante = new Fabricante(
@@ -170,15 +194,5 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
                 rs.getDouble("precio"),
                 rs.getInt("stock"),
                 fabricante);
-    }
-    @Override
-    public List<Producto> findByFabricanteCodigo(Integer codigoFabricante) {
-        String sql = SELECT_BASE + " WHERE p.codigo_fabricante = ? ORDER BY p.codigo";
-        List<Producto> lista = new ArrayList<>();
-        try (Connection con = dataSource.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, codigoFabricante);
-            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) lista.add(mapRow(rs)); }
-            return lista;
-        } catch (SQLException e) { throw new AccesoDatosException("Error al buscar productos por fabricante", e); }
     }
 }

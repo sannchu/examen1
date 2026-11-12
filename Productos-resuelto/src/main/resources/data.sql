@@ -10,6 +10,7 @@ INSERT INTO fabricante (nombre) VALUES ('Huawei');          -- 8
 INSERT INTO fabricante (nombre) VALUES ('Xiaomi');          -- 9
 
 -- Productos
+-- Productos
 INSERT INTO producto (nombre, precio, stock, codigo_fabricante) VALUES ('Disco duro SATA3 1TB', 86.99, 25, 5);
 INSERT INTO producto (nombre, precio, stock, codigo_fabricante) VALUES ('Memoria RAM DDR4 8GB', 120, 40, 6);
 INSERT INTO producto (nombre, precio, stock, codigo_fabricante) VALUES ('Disco SSD 1 TB', 150.99, 15, 4);

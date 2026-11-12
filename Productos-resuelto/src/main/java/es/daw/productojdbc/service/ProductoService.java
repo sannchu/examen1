@@ -24,11 +24,6 @@ public class ProductoService {
 //        this.fabricanteRepository = fabricanteRepository;
 //    }
 
-    public List<Producto> listarPorFabricante(Integer codigo) {
-        fabricanteRepository.findById(codigo).orElseThrow(() -> new RecursoNoEncontradoException("No existe el fabricante con código " + codigo));
-        return productoRepository.findByFabricanteCodigo(codigo);
-    }
-
     public List<Producto> listar() {
         return productoRepository.findAll();
     }
@@ -73,6 +68,21 @@ public class ProductoService {
         productoRepository.delete(codigo);
     }
 
+
+    // ------ RETO 2 ----
+    public List<Producto> listarPorFabricante(Integer codigoFabricante) {
+
+        // Regla de negocio: comprobar que el codigoFabricante existe...
+        fabricanteRepository.findById(codigoFabricante).orElseThrow(
+                () -> new RecursoNoEncontradoException("No existe el fabricante con código "+codigoFabricante));
+
+        return productoRepository.findByFabricanteCodigo(codigoFabricante);
+    }
+
+
+
+
+    // ----------
     // Reglas comunes a crear y actualizar
     private void prepararParaGuardar(Producto producto) {
         producto.setNombre(producto.getNombre().trim());

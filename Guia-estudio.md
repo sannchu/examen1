@@ -51,7 +51,7 @@ La ruta Java concreta de Productos empieza por `src/main/java/es/daw/productojdb
 - **Interfaz de repositorio:** explica qué operaciones hay sin obligar al servicio a conocer JDBC. `GenericRepository<T, ID>` reúne el CRUD común.
 - **Repositorio JDBC:** implementa el contrato, ejecuta SQL y convierte filas a objetos. Captura `SQLException` y la envuelve en `AccesoDatosException`.
 - **Modelo:** representa los datos del dominio. Un producto tiene un objeto `Fabricante`, no solo el número de la FK.
-- **DTO y mapper:** un DTO representa los datos que necesita la vista. El mapper convierte DTO y modelo. Productos hace esa conversión en `ProductoForm`; Biblioteca tiene clases mapper separadas.
+- **DTO y mapper:** un DTO representa los datos que necesita la vista. El mapper convierte DTO y modelo. En el proyecto original Productos hace esa conversión en `ProductoForm`; en la solución de clase se llama `ProductoDto`. Biblioteca tiene clases mapper separadas.
 
 `@Controller`, `@Service`, `@Repository` y `@Component` hacen que Spring detecte esas clases. La inyección por constructor proporciona sus dependencias. Si ves `@RequiredArgsConstructor`, Lombok genera un constructor para los campos `final`; Spring lo utiliza.
 
@@ -94,77 +94,123 @@ En `repository/ProductoRepositoryJdbc.java`, `SELECT_BASE` une tablas. Los alias
 - `resources/schema.sql`: `libro.autor_id` referencia a `autor.id` con `ON DELETE CASCADE`; cuando se borra un autor, la base borra sus libros. Esto contrasta con Productos, donde se prohíbe borrar un fabricante con productos.
 - `resources/messages.properties`: textos de validación. `resources/templates/autores/` y `libros/`: formularios y listas; en libros también está el formulario de filtros.
 
-## 2. Productos: reto 4, añadir stock
+### 1.6. Qué buscar en cada directorio y cuándo modificarlo
 
-El enunciado indica empezar por este reto. Se necesita un entero obligatorio, que admita cero. Se modifica tanto el camino de guardar como el de leer. Las rutas siguientes son dentro de `Productos-resuelto`.
+Abre `Productos-original` para reconocer el punto de partida y `Productos-resuelto` para ver cómo quedó la solución de clase terminada. En los pasos de Productos las rutas Java son relativas a `Productos-resuelto/src/main/java/es/daw/productojdbc/` y las de recursos a `Productos-resuelto/src/main/resources/`. El original usa `ProductoForm` y la copia de clase usa `ProductoDto`; no copies simultáneamente ambas clases ni sus métodos. El ZIP de clase incluye la mayor parte de los cambios: los bloques siguientes enseñan cómo quedan y cómo llegar a ellos, no se deben duplicar en la solución ya terminada.
 
-### Paso 1. Tabla y datos iniciales
+- **Raíz del proyecto:** `pom.xml` declara versión de Java, dependencias y plugins. `mvnw.cmd` y `.mvn/` permiten ejecutar Maven en Windows. No pongas reglas de negocio aquí; consulta este archivo si falta una librería o falla la compilación.
+- **`src/main/java/.../ProductoJdbcApplication.java`:** punto de entrada. `SpringApplication.run` inicia Spring y descubre los componentes de sus paquetes. Habitualmente no hay que cambiarlo al añadir un campo.
+- **`config/`:** configura aspectos transversales de Spring MVC. Por ejemplo, `WebConfig` participa en la configuración web. No contiene los productos ni las consultas.
+- **`model/`:** representa objetos del dominio, como `Producto` y `Fabricante`. Modifícalo si el objeto necesita guardar un dato nuevo. Java relaciona objetos mediante `Producto.fabricante`; en la tabla se guarda el código del fabricante.
+- **`dto/`:** define datos para formularios o resultados de pantalla. `ProductoDto` recibe `codigoFabricante` y aplica validaciones; `FabricanteResumen` lleva el resultado del contador. Separa el formato de la pantalla del modelo y permite, por ejemplo, detectar que falta un entero mediante `Integer`.
+- **`controller/`:** asigna URLs a métodos, recoge parámetros, valida y elige vista o redirección. `Model` es el contenedor que entrega atributos a la plantilla; no es una tabla ni la carpeta `model/`. Modifica el controlador si cambia una ruta, los datos de una vista o el tratamiento de un error.
+- **`service/`:** coordina operaciones y reglas: buscar el fabricante real, recortar nombres, impedir duplicados o un borrado no permitido. Modifícalo cuando cambia una regla o se necesita coordinar repositorios. No ejecuta directamente SQL.
+- **`repository/`:** las interfaces declaran lo que puede pedirse; las clases `...Jdbc` implementan las operaciones con SQL, `PreparedStatement` y `ResultSet`. `GenericRepository` reúne operaciones generales. Para una consulta nueva normalmente se toca la interfaz y su implementación.
+- **`exception/`:** contiene excepciones con significado y el controlador global de errores. Una excepción permite que el servicio comunique el problema sin construir HTML. Algunas, como la de duplicado, las captura el propio controlador para asociarlas al formulario.
+- **`src/main/resources/schema.sql` y `data.sql`:** el primero crea tablas, columnas y relaciones; el segundo inserta datos iniciales compatibles con ese esquema. Añadir `NOT NULL` obliga a proporcionar un valor en los INSERT existentes.
+- **`application.properties`:** parámetros de conexión y arranque. En estos proyectos la base H2 es en memoria: reiniciar vuelve a cargar el esquema y los datos iniciales.
+- **`templates/`:** HTML procesado en el servidor por Thymeleaf. Sus subcarpetas `productos/` y `fabricantes/` agrupan formularios y listados; `fragments/layout.html` comparte cabecera, navegación y alertas. `th:object`, `th:field`, `th:each` y `th:text` conectan HTML con datos de Spring.
+- **`static/`:** recursos servidos directamente, como CSS; no contiene las consultas ni las plantillas dinámicas.
+- **`src/test/`:** pruebas automatizadas. La prueba de arranque comprueba que Spring inicia, pero por sí sola no verifica todas las reglas ni pantallas. En Biblioteca, además, `mapper/` transforma DTO y modelo y `messages.properties` centraliza textos.
 
-En `src/main/resources/schema.sql`, dentro de `CREATE TABLE producto`, añade esta columna junto a `precio`:
+### 1.7. Conexión completa: guardar, leer y editar un producto
 
+**Ejemplo:** crear «Monitor», precio 200, stock 3 y fabricante con código 1. Sigue el mismo valor `3` en todos los pasos; si no puedes encontrarlo en uno de ellos, el recorrido está incompleto.
 
+1. El navegador solicita `GET /productos/nuevo`. `ProductoController.nuevo` crea un `ProductoDto` vacío y carga `fabricanteService.listar()` en el atributo `fabricantes`. Devuelve `productos/formulario`; Thymeleaf resuelve `templates/productos/formulario.html` y dibuja el desplegable.
+2. El `<form>` tiene `th:object="${productoDto}"` y envía un POST a `/productos/guardar`. `th:field="*{stock}"` enlaza el input con `productoDto.stock`; el `<select>` envía `codigoFabricante=1`, no un objeto Java.
+3. Spring construye y rellena el DTO con los valores enviados. En `ProductoController.guardar`, `@Valid` ejecuta sus restricciones; `BindingResult` reúne errores de validación y conversión. Si falla, se recarga `fabricantes` y se devuelve el formulario con `th:errors`: si no se recarga, el desplegable no tiene sus opciones al mostrar errores.
+4. Si es válido, `productoDto.toModelEntity()` crea un `Producto` y un `Fabricante` con el código recibido. El controlador llama a `productoService.crear` o `actualizar`, según el código oculto. El servicio limpia el nombre, busca el fabricante completo y rechaza uno inexistente.
+5. El servicio llama a la interfaz `ProductoRepository`; Spring proporciona `ProductoRepositoryJdbc`. En `save`, el SQL tiene `?` y `setString`, `setDouble` y `setInt` asignan los valores **en el orden de los interrogantes**, empezando en 1. `executeUpdate` inserta la fila en `producto`; `codigo_fabricante=1` es la clave ajena que apunta a `fabricante.codigo`.
+6. El controlador devuelve `redirect:/productos`. El navegador realiza un GET nuevo. `ProductoController.listar` llama a `ProductoService.listar`, que llama a `findAll` del repositorio.
+7. `SELECT_BASE` une `producto` y `fabricante` con `JOIN`. `executeQuery` devuelve un `ResultSet`; por cada fila, `mapRow` lee `stock` y crea un `Fabricante` y un `Producto`. El repositorio entrega la lista al servicio y este al controlador.
+8. El controlador añade la lista como `productos` y devuelve `productos/lista`. `th:each` crea una fila por producto y `th:text="${p.stock}"` enseña el 3. En este listado se usan objetos `Producto` directamente: no hay conversión al DTO para mostrar la tabla.
+9. Para editar, `GET /productos/editar/{codigo}` usa `findById`, el mismo `SELECT_BASE` y `mapRow`. `ProductoDto.toDto(producto)` copia los valores al formulario, incluido el stock. Al enviar, se validan y `update` ejecuta el SQL de modificación. Si olvidas `toDto`, el dato puede estar guardado y aun así no aparecer en el formulario de edición.
+
+**Diferencia entre las dos direcciones:** guardar es `HTML → DTO → Producto → servicio → INSERT/UPDATE → tabla`; listar es `tabla → SELECT/JOIN → ResultSet → Producto → servicio → controlador → HTML`. Para editar se intercala `Producto → DTO → formulario` antes de repetir el camino de guardado. El fabricante, por su parte, viaja como código en el formulario, como objeto en Java y como clave ajena en SQL.
+
+### 1.8. Cómo leer cada paso de los retos
+
+Cada bloque indica si hay que **añadir un campo**, **sustituir un método completo** o **completar una parte**. Las clases y métodos existentes no se duplican. Cuando se muestra un fragmento parcial, conserva el resto del archivo y sus imports; IntelliJ puede sugerir los imports que falten. Los métodos de la profesora se muestran con sus nombres reales. Al estudiar desde `Productos-original`, ten en cuenta que el ZIP de clase también cambió nombres de DTO y plantillas; la referencia final exacta es `Productos-resuelto`.
+
+## 2. Productos: reto 4, añadir stock paso a paso
+
+[Fuente: ZIP de la profesora del 10 de noviembre](https://github.com/profeMelola/DWES-02-2026-27/blob/main/ejercicios/logistica-src-clase10Nov-todosLosRetos.zip). El ZIP solo trae `src`; el proyecto conserva el `pom.xml` y el wrapper del original. La profesora ya había hecho gran parte del reto. Aquí se muestra el resultado completo y se señalan los ajustes posteriores.
+
+**Análisis:** se pide un entero obligatorio que puede ser 0. Hay que almacenarlo al crear y editar, recuperarlo al listar y editar y enseñarlo en pantalla. El orden de trabajo sigue el viaje del dato. En el código del ZIP ya estaba casi todo salvo la columna del listado y una validación coherente con cero y campo vacío.
+
+### Paso 1. Añadir la columna y los datos iniciales
+
+En `schema.sql`, dentro de `CREATE TABLE producto`, comprueba que aparece la columna entre precio y fabricante:
 
 ```sql
-stock INT NOT NULL,
+precio            DOUBLE       NOT NULL,
+stock             INT          NOT NULL,
+codigo_fabricante INT          NOT NULL,
 ```
 
-
-`NOT NULL` obliga a que toda fila tenga valor. Por eso hay que cambiar cada INSERT de productos en `data.sql`, indicando columna y valor. Un ejemplo real:
-
-
+En `data.sql`, **cada INSERT de producto** debe indicar `stock` y su valor en el mismo orden; por ejemplo:
 
 ```sql
-INSERT INTO producto (nombre, precio, stock, codigo_fabricante) VALUES ('Disco duro SATA3 1TB', 86.99, 25, 5);
+INSERT INTO producto (nombre, precio, stock, codigo_fabricante)
+VALUES ('Disco duro SATA3 1TB', 86.99, 25, 5);
 ```
 
+Sin este dato los INSERT antiguos fallan porque la columna no admite NULL. No basta con añadirlo al primer producto.
 
-Las cuatro columnas y los cuatro valores se corresponden en orden. Consulta el archivo completo para ver los once INSERT. Si falta el valor de stock en uno, falla la inicialización.
+### Paso 2. Añadir el dato al modelo
 
-### Paso 2. Modelo y DTO
+En `model/Producto.java`, junto a los demás atributos, añade `private int stock;` **antes de** `fabricante`. Con `@AllArgsConstructor`, el orden resultante es `codigo, nombre, precio, stock, fabricante`. Revisa todas las llamadas a `new Producto(...)`, incluido el mapeo JDBC y el DTO: el constructor ahora requiere ese argumento.
 
-En `model/Producto.java`, añade `private int stock;` después de `precio`. Comprueba el orden de campos: el constructor completo generado por Lombok pasa a recibir `(codigo, nombre, precio, stock, fabricante)`.
+### Paso 3. DTO: validación y conversiones
 
-En `dto/ProductoForm.java` añade, antes de `codigoFabricante`:
-
-
+En `dto/ProductoDto.java`, añade o sustituye el campo stock y conserva el resto de atributos:
 
 ```java
 @NotNull(message = "El stock es obligatorio")
-@jakarta.validation.constraints.PositiveOrZero(message = "El stock no puede ser negativo")
+@Min(value = 0, message = "El stock no puede ser negativo")
 private Integer stock;
 ```
 
+`Integer` puede ser `null`, por lo que `@NotNull` detecta la ausencia. Con `int`, el valor inicial es 0 y no se distingue de un cero escrito. `@Min(0)` acepta 0 y rechaza negativos. La profesora había utilizado `int`, `@Positive`, `@Min(1)` y `@Max(100)`; se cambian porque contradicen el cero de los datos de ejemplo o añaden un límite que no pide el enunciado. La conversión a `int` del modelo ocurre después de validar.
 
-Usamos `Integer` en el formulario: `null` permite detectar un campo sin rellenar; `0` es una cantidad válida. `@NotNull` y `@PositiveOrZero` tienen responsabilidades distintas. Dentro de `toDto`, añade `form.setStock(p.getStock());`; en `toModelEntity` usa:
-
-
+En el mismo archivo, **sustituye** los métodos de conversión por estos si aún no incluyen stock:
 
 ```java
-return new Producto(codigo, nombre, precio, stock, fabricante);
+public static ProductoDto toDto(Producto p) {
+        ProductoDto form = new ProductoDto();
+        form.setCodigo(p.getCodigo());
+        form.setNombre(p.getNombre());
+        form.setPrecio(p.getPrecio());
+        form.setStock(p.getStock());
+        form.setCodigoFabricante(p.getFabricante().getCodigo());
+        return form;
+    }
 ```
 
+```java
+public Producto toModelEntity() {
+        Fabricante fabricante = new Fabricante(codigoFabricante, null);
+        return new Producto(codigo, nombre, precio, stock, fabricante);
+    }
+```
 
-Esto permite que al editar se rellene el formulario y que al guardar el valor llegue al modelo. La conversión solo se ejecuta tras superar la validación del controlador.
+`toDto` se usa al abrir la edición; `toModelEntity` al guardar. El orden en el constructor debe coincidir con el modelo. Si solo cambias uno, el dato se pierde en una de las dos direcciones.
 
-### Paso 3. Lectura JDBC
+### Paso 4. Consultas de lectura y mapeo JDBC
 
-En `repository/ProductoRepositoryJdbc.java`, el SELECT común queda así:
-
-
+En `repository/ProductoRepositoryJdbc.java`, sustituye `SELECT_BASE` por la versión con `p.stock`:
 
 ```java
 private static final String SELECT_BASE = """
-            SELECT p.codigo, p.nombre, p.precio, p.stock,
-                   f.codigo AS f_codigo, f.nombre AS f_nombre
-            FROM producto p
-            JOIN fabricante f ON p.codigo_fabricante = f.codigo
-            """;
+        SELECT p.codigo, p.nombre, p.precio, p.stock,
+               f.codigo AS f_codigo, f.nombre AS f_nombre
+        FROM producto p
+        JOIN fabricante f ON p.codigo_fabricante = f.codigo
+        """;
 ```
 
-
-Todos los métodos que reutilizan `SELECT_BASE` reciben `p.stock`. En el método `mapRow`, añade la lectura antes del fabricante, respetando el orden del constructor:
-
-
+La usan `findAll`, `findById` y `findByFabricanteCodigo`; así todas traen el dato. Sustituye también `mapRow`:
 
 ```java
 private Producto mapRow(ResultSet rs) throws SQLException {
@@ -181,29 +227,35 @@ private Producto mapRow(ResultSet rs) throws SQLException {
     }
 ```
 
+Los alias identifican las columnas del fabricante. `rs.getInt("stock")` recupera la columna para construir el producto. La columna es `NOT NULL`; por eso no se pierde información de nulidad al usar `getInt`.
 
-`rs.getInt("stock")` lee por nombre de columna. Sin esa línea el valor nunca llegaría a Java aunque estuviera en la base.
+### Paso 5. Consultas de escritura JDBC
 
-### Paso 4. Escritura JDBC
-
-En `save`, sustituye el SQL y la asignación de parámetros por estas líneas, conservando el `try` y la recuperación de claves generadas del original:
-
-
+En el mismo repositorio, sustituye `save` y `update` por estos métodos. Mantén sus anotaciones `@Override` en el archivo:
 
 ```java
-String sql = "INSERT INTO producto (nombre, precio, stock, codigo_fabricante) VALUES (?, ?, ?, ?)";
-// Dentro del try, después de crear ps:
-ps.setString(1, producto.getNombre());
-ps.setDouble(2, producto.getPrecio());
-ps.setInt(3, producto.getStock());
-ps.setInt(4, producto.getFabricante().getCodigo());
-ps.executeUpdate();
+public void save(Producto producto) {
+        String sql = "INSERT INTO producto (nombre, precio, stock, codigo_fabricante) VALUES (?, ?, ?, ?)";
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, producto.getNombre());
+            ps.setDouble(2, producto.getPrecio());
+            ps.setInt(3, producto.getStock());
+            ps.setInt(4, producto.getFabricante().getCodigo());
+
+            ps.executeUpdate();
+
+            // Recuperamos el código que ha generado AUTO_INCREMENT y se lo asignamos al objeto
+            try (ResultSet claves = ps.getGeneratedKeys()) {
+                if (claves.next()) {
+                    producto.setCodigo(claves.getInt(1));
+                }
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al guardar el producto", e);
+        }
+    }
 ```
-
-
-Para edición, el método completo de la solución es:
-
-
 
 ```java
 public void update(Producto producto) {
@@ -222,251 +274,440 @@ public void update(Producto producto) {
     }
 ```
 
+`stock` ocupa la posición 3 en ambos SQL y se enlaza con `setInt(3, ...)`. En la actualización el fabricante pasa a la posición 4 y el código del producto a la 5. Si cambias SQL y no cambias índices, se guardan datos incorrectos o falla la consulta. `delete` solo necesita el código y no cambia por este reto.
 
-Lee los `?` de izquierda a derecha: 1 nombre, 2 precio, 3 stock, 4 FK, 5 código del producto. El 5 identifica qué fila modificar; olvidarlo o desplazarlo puede producir errores o escribir valores en columnas equivocadas. El DELETE no necesita stock.
+### Paso 6. Formulario y listado
 
-### Paso 5. Formulario y listado
-
-En `resources/templates/productos/formulario.html`, dentro del `<form>` y antes del desplegable de fabricante, añade:
-
-
+En `templates/productos/formulario.html`, añade el bloque junto al precio:
 
 ```html
 <div class="mb-3">
-  <label for="stock" class="form-label">Stock</label>
-  <input type="number" min="0" th:field="*{stock}" class="form-control"
-         th:classappend="${#fields.hasErrors('stock')} ? 'is-invalid'">
-  <div class="invalid-feedback" th:errors="*{stock}">Error</div>
+    <label for="stock" class="form-label">Stock</label>
+    <input type="number" step="1" min="0" th:field="*{stock}" class="form-control"
+           th:classappend="${#fields.hasErrors('stock')} ? 'is-invalid'">
+    <div class="invalid-feedback" th:errors="*{stock}">Error</div>
 </div>
 ```
 
+`th:field` enlaza el campo; `th:errors` presenta el error del DTO; `step="1"` expresa unidades enteras. La validación del servidor sigue siendo necesaria. En `templates/productos/lista.html`, añade la cabecera después de precio y la celda correspondiente dentro del `th:each`:
 
-`th:field` enlaza con `ProductoForm.stock`; `th:errors` muestra el mensaje que produce la validación en servidor. `min="0"` ayuda en navegador, pero no reemplaza la validación Java. En `productos/lista.html`, agrega `<th>Stock</th>` a la cabecera y `<td th:text="${p.stock}">0</td>` a cada fila en la misma posición; aumenta `colspan` de 6 a 7.
+```html
+<th>Stock</th>
+<!-- En la fila de cada producto: -->
+<td th:text="${p.stock}">0</td>
+```
 
-Comprueba alta con 0 y con 7, vacío y -1, y edición: al volver a abrir debe mantener el valor. Si se guarda pero no aparece, revisa SELECT y `mapRow`; si se ve al editar pero no cambia en BD, revisa UPDATE e índices.
+Como la tabla tiene una columna más, cambia el `colspan` de la fila «No hay productos» de 6 a 7. **Comprobación:** crea con 0 y con 101, edita y recarga; prueba vacío, negativo y decimal. Los valores válidos deben persistir mientras la aplicación esté arrancada; los inválidos deben volver al formulario con error.
 
 ## 3. Productos: reto 1, contar productos por fabricante
 
-### Paso 1. Entender el resultado
+**Análisis:** queremos una fila por fabricante, incluidos los que tienen cero productos. La cantidad es un dato calculado para el listado. Recorrido: SQL → `FabricanteResumen` → servicio → controlador → plantilla.
 
-Hay que mostrar fabricantes con y sin productos. El ZIP ya trae `dto/FabricanteResumen.java` con `codigo`, `nombre`, `numProductos`: representa una fila combinada, no modifica la tabla fabricante. `COUNT(p.codigo)` cuenta solo valores no nulos. Un `LEFT JOIN` conserva la fila del fabricante aunque no haya productos; con `COUNT(*)` ese fabricante contaría incorrectamente como 1.
+### Paso 1. Resultado de la consulta
 
-### Paso 2. Interfaz
-
-En `repository/FabricanteRepository.java`, dentro de la interfaz, añade:
-
-
+En `dto/FabricanteResumen.java`, el ZIP de clase utiliza esta estructura (ya existe en el original, así que comprueba sus campos antes de modificarla):
 
 ```java
-java.util.List<es.daw.productojdbc.dto.FabricanteResumen> findAllConNumeroProductos();
-```
-
-
-La interfaz declara **qué** operación existe. Con imports, el mismo tipo puede escribirse simplemente como `List<FabricanteResumen>`.
-
-### Paso 3. Implementación JDBC
-
-En `repository/FabricanteRepositoryJdbc.java`, dentro de la clase, añade:
-
-
-
-```java
-public java.util.List<es.daw.productojdbc.dto.FabricanteResumen> findAllConNumeroProductos() {
-        String sql = "SELECT f.codigo, f.nombre, COUNT(p.codigo) AS total FROM fabricante f LEFT JOIN producto p ON p.codigo_fabricante = f.codigo GROUP BY f.codigo, f.nombre ORDER BY f.nombre";
-        java.util.List<es.daw.productojdbc.dto.FabricanteResumen> lista = new java.util.ArrayList<>();
-        try (Connection con = dataSource.getConnection(); PreparedStatement ps = con.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) lista.add(new es.daw.productojdbc.dto.FabricanteResumen(rs.getInt("codigo"), rs.getString("nombre"), rs.getInt("total")));
-            return lista;
-        } catch (SQLException e) { throw new AccesoDatosException("Error al contar productos", e); }
-    }
-```
-
-
-`GROUP BY` agrupa por fabricante; `AS total` permite leer el contador con `rs.getInt("total")`; `while` convierte todas las filas a resúmenes. `try-with-resources` libera conexión, sentencia y resultado. Si falla el SQL se conserva la causa original al envolver la excepción.
-
-### Paso 4. Servicio, controlador y vista
-
-En `service/FabricanteService.java` añade:
-
-
-
-```java
-public java.util.List<es.daw.productojdbc.dto.FabricanteResumen> listarResumen() {
-    return fabricanteRepository.findAllConNumeroProductos();
+@Data
+@AllArgsConstructor
+public class FabricanteResumen {
+    private Integer codigo;
+    private String nombre;
+    private int numProductos;
 }
 ```
 
+Lombok genera getters y el constructor usado por JDBC. Es un DTO de lectura; no modifica la tabla `fabricante`.
 
-En `controller/FabricanteController.java`, en el método `listar`, cambia la llamada por `fabricanteService.listarResumen()`. Mantén el método `listar()` original del servicio: el desplegable de productos sigue necesitando fabricantes normales. En `templates/fabricantes/lista.html` añade una cabecera y una celda por fila:
+### Paso 2. Contrato del repositorio
 
+En `repository/FabricanteRepository.java`, dentro de la interfaz, añade:
 
-
-```html
-<th>Productos</th>
-<!-- En la fila de cada fabricante: -->
-<td><a th:href="@{/fabricantes/{codigo}/productos(codigo=${f.codigo})}"
-       th:text="${f.numProductos}">0</a></td>
+```java
+List<FabricanteResumen> findAllWithNumProductos();
 ```
 
+Importa `List` y `FabricanteResumen`. La interfaz permite que el servicio solicite la operación sin depender de JDBC.
 
-El enlace también sirve para el reto 2. Comprueba un fabricante con productos y otro sin ellos: el segundo debe salir con 0 y seguir apareciendo.
+### Paso 3. SQL y conversión del resultado
+
+En `repository/FabricanteRepositoryJdbc.java`, añade el método con `@Override` e imports correspondientes:
+
+```java
+public List<FabricanteResumen> findAllWithNumProductos() {
+        String sql = """
+                        SELECT f.codigo, f.nombre, COUNT(p.codigo) AS num_productos
+                        FROM fabricante f
+                        LEFT JOIN producto p ON p.codigo_fabricante = f.codigo
+                        GROUP BY f.codigo, f.nombre
+                        ORDER BY f.nombre                        
+                        """;
+
+        List<FabricanteResumen> fabricantes = new ArrayList<>();
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                fabricantes.add(new FabricanteResumen(
+                        rs.getInt("codigo"),
+                        rs.getString("nombre"),
+                        rs.getInt("num_productos")
+                ));
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al listar los fabricantes con su nº de productos", e);
+        }
+        return fabricantes;
+    }
+```
+
+`LEFT JOIN` conserva fabricantes sin producto. `COUNT(p.codigo)` ignora el código nulo de esa fila y da 0; `COUNT(*)` contaría la fila y daría 1. `GROUP BY` reúne las filas de cada fabricante; el alias `num_productos` permite leer la cuenta desde `ResultSet`.
+
+### Paso 4. Servicio y controlador
+
+En `service/FabricanteService.java`, añade:
+
+```java
+public List<FabricanteResumen> findAllWithNumProductos() {
+        return fabricanteRepository.findAllWithNumProductos();
+    }
+```
+
+En `controller/FabricanteController.java`, sustituye `listar` conservando `@GetMapping`:
+
+```java
+public String listar(Model model) {
+
+        //model.addAttribute("fabricantes", fabricanteService.listar());
+
+        // ------------ RETO 1 --------------
+        model.addAttribute("fabricantes",fabricanteService.findAllWithNumProductos());
+
+        return "fabricantes/lista";
+
+    }
+```
+
+El nombre `fabricantes` debe coincidir con la expresión usada por la plantilla. El servicio mantiene el controlador separado del repositorio.
+
+### Paso 5. Pintar el contador
+
+En `templates/fabricantes/lista.html`, añade `<th>Num productos</th>` en la cabecera y esta celda dentro de `th:each="f : ${fabricantes}"`:
+
+```html
+<td th:text="${f.numProductos}"
+    th:classappend="${f.numProductos > 0}? 'text-bg-primary':'text-bg-secondary'">x</td>
+```
+
+Ajusta a 5 el `colspan` de la fila vacía. En la solución el botón de borrado también usa `th:disabled="${f.numProductos > 0}"`; la regla real sigue comprobándose en el servicio. **Comprueba:** un fabricante con varios productos y otro recién creado sin productos deben aparecer con sus cantidades correctas.
 
 ## 4. Productos: reto 2, ver los productos de un fabricante
 
-### Paso 1. Contrato y SQL
+**Análisis:** desde un fabricante hay que filtrar sus productos y enseñar una vista de consulta. Un fabricante sin productos debe mostrar una lista vacía; un código inexistente debe producir 404. Recorrido: enlace → controlador → servicios → repositorio → SQL → lista → vista.
 
-Añade a `repository/ProductoRepository.java`:
+### Paso 1. Declarar la consulta
 
-
+En `repository/ProductoRepository.java`, añade dentro de la interfaz:
 
 ```java
-java.util.List<es.daw.productojdbc.model.Producto> findByFabricanteCodigo(Integer codigoFabricante);
+List<Producto> findByFabricanteCodigo(Integer codigoFabricante);
 ```
 
+### Paso 2. Implementarla con JDBC
 
-Y en `ProductoRepositoryJdbc.java` implementa:
-
-
+En `repository/ProductoRepositoryJdbc.java`, añade el método conservando `@Override`:
 
 ```java
 public List<Producto> findByFabricanteCodigo(Integer codigoFabricante) {
-        String sql = SELECT_BASE + " WHERE p.codigo_fabricante = ? ORDER BY p.codigo";
-        List<Producto> lista = new ArrayList<>();
-        try (Connection con = dataSource.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
+        String sql = SELECT_BASE + "WHERE p.codigo_fabricante = ? ORDER BY p.nombre"; // por defecto es ASC
+
+        List<Producto> productos = new ArrayList<>();
+
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, codigoFabricante);
-            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) lista.add(mapRow(rs)); }
-            return lista;
-        } catch (SQLException e) { throw new AccesoDatosException("Error al buscar productos por fabricante", e); }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    productos.add(mapRow(rs));
+                }
+
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al listar los productos del fabricante " + codigoFabricante, e);
+        }
+
+        return productos;
     }
 ```
 
+Se reutilizan el JOIN y `mapRow` del reto 4. `?` recibe el código con `setInt`; no se concatena la entrada. `ORDER BY p.nombre` ordena los resultados. La lista vacía se devuelve si no hay coincidencias.
 
-Se reutilizan el JOIN y `mapRow`; el parámetro 1 filtra la FK. Una lista vacía significa que el fabricante no tiene productos, siempre que exista.
+### Paso 3. Comprobar el fabricante en el servicio
 
-### Paso 2. Servicio y controlador
-
-En `service/ProductoService.java`:
-
-
+En `service/ProductoService.java`, añade:
 
 ```java
-public List<Producto> listarPorFabricante(Integer codigo) {
-        fabricanteRepository.findById(codigo).orElseThrow(() -> new RecursoNoEncontradoException("No existe el fabricante con código " + codigo));
-        return productoRepository.findByFabricanteCodigo(codigo);
+public List<Producto> listarPorFabricante(Integer codigoFabricante) {
+
+        // Regla de negocio: comprobar que el codigoFabricante existe...
+        fabricanteRepository.findById(codigoFabricante).orElseThrow(
+                () -> new RecursoNoEncontradoException("No existe el fabricante con código "+codigoFabricante));
+
+        return productoRepository.findByFabricanteCodigo(codigoFabricante);
     }
 ```
 
+La comprobación separa «fabricante existente sin productos» de «fabricante inexistente». Si no existe, `orElseThrow` produce la excepción tratada como 404.
 
-La comprobación de existencia distingue código inexistente de fabricante válido sin productos. En `FabricanteController` se inyecta también `ProductoService` en el constructor; después se añade:
+### Paso 4. Crear la ruta
 
-
+En `controller/FabricanteController.java`, inyecta `private final ProductoService productoService;` junto a `fabricanteService`. `@RequiredArgsConstructor` de la solución genera el constructor para ambos. Añade el método y su anotación:
 
 ```java
-public String productos(@PathVariable Integer codigo, Model model) {
-        model.addAttribute("fabricante", fabricanteService.buscarPorCodigo(codigo));
-        model.addAttribute("productos", productoService.listarPorFabricante(codigo));
-        return "fabricantes/productos";
+@GetMapping("/{codigo}/productos")
+public String productosDelFabricante(@PathVariable("codigo") Integer codigo, Model model) {
+
+        model.addAttribute("fabricante",fabricanteService.buscarPorCodigo(codigo));
+        model.addAttribute("productos",productoService.listarPorFabricante(codigo));
+
+        return "fabricantes/productosDelFabricante";
+
     }
 ```
 
+El fabricante se carga aparte para mostrar su nombre incluso cuando la lista está vacía. El nombre retornado apunta al archivo `templates/fabricantes/productosDelFabricante.html`.
 
-Coloca `@GetMapping("/{codigo}/productos")` inmediatamente encima. El método pone fabricante y lista en el modelo y devuelve el nombre de la plantilla. En `templates/fabricantes/productos.html` la solución muestra `fabricante.nombre`, recorre `productos`, enseña nombre, precio y stock y contempla lista vacía. Comprueba `/fabricantes/1/productos`, uno sin productos y un código inexistente.
+### Paso 5. Enlace y plantilla
 
-## 5. Productos: reto 3, evitar fabricantes duplicados
+En `templates/fabricantes/lista.html`, sustituye la celda del nombre por:
 
-### Paso 1. Planteamiento
+```html
+<td>
+    <a th:href="@{/fabricantes/{codigo}/productos(codigo=${f.codigo})}"
+       th:text="${f.nombre}">Nombre</a>
+</td>
+```
 
-En alta hay que buscar cualquier nombre igual sin distinguir mayúsculas. En edición hay que ignorar la propia fila: si Asus guarda Asus, eso no es duplicado. Se recortan espacios al principio y final antes de comparar. El repositorio consulta; el servicio decide; el controlador muestra el error.
+`{codigo}` se reemplaza por el valor de cada fabricante. Crea `templates/fabricantes/productosDelFabricante.html`: este es el archivo completo de la profesora:
 
-En `repository/FabricanteRepository.java`, declara:
+```html
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Productos del fabricante')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: navbar}"></nav>
 
+<!-- RETO 2: productos de un fabricante -->
+<div class="container" style="max-width: 800px;">
 
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="text-success">
+            <!-- El fabricante llega aparte en el modelo: si no tiene productos, también hay título -->
+            🏭 <span th:text="${fabricante.nombre}"></span>
+            <!-- |...| es sustitución literal: mezcla texto y expresiones sin concatenar con + -->
+            <small class="text-muted fs-5" th:text="|${#lists.size(productos)} productos|">(0 productos)</small>
+        </h2>
+        <a th:href="@{/fabricantes}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Volver a fabricantes
+        </a>
+    </div>
+
+    <!-- Sin columna Fabricante (ya sale en el título) ni botones: es una página de consulta -->
+    <table class="table table-bordered table-hover bg-white align-middle">
+        <thead class="table-dark">
+        <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th>Precio</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!-- colspan="3": la fila ocupa las tres columnas de la tabla -->
+        <tr th:if="${#lists.isEmpty(productos)}">
+            <td colspan="3" class="text-center text-muted">Este fabricante no tiene productos</td>
+        </tr>
+        <tr th:each="p : ${productos}">
+            <td th:text="${p.codigo}">1</td>
+            <td th:text="${p.nombre}">Nombre</td>
+            <!-- 1 cifra entera, dos decimales y el punto (POINT, COMMA, DEFAULT (locale del navegador) -->
+            <td th:text="${#numbers.formatDecimal(p.precio, 1, 2, 'POINT')}">0.00</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>
+```
+
+`#lists.size` calcula la cantidad, `th:if` muestra el mensaje si está vacía y `th:each` recorre los productos. **Comprueba:** un fabricante con productos, otro sin ellos y `/fabricantes/99999/productos`.
+
+## 5. Productos: reto 3, impedir fabricantes duplicados
+
+**Análisis:** al crear, ningún otro fabricante puede tener el mismo nombre sin distinguir mayúsculas. Al editar, se excluye el propio código para permitir conservar su nombre. El servicio aplica la regla; el controlador comunica el error al formulario.
+
+### Paso 1. Declarar las consultas
+
+En `repository/FabricanteRepository.java`, dentro de la interfaz, añade:
 
 ```java
 boolean existsByNombreIgnoreCase(String nombre);
 boolean existsByNombreIgnoreCaseAndCodigoNot(String nombre, Integer codigo);
 ```
 
+### Paso 2. Implementar las consultas
 
-### Paso 2. Consultas y excepción
-
-La solución comparte la consulta con un método privado en `FabricanteRepositoryJdbc.java`:
-
-
+En `repository/FabricanteRepositoryJdbc.java`, añade ambos métodos con sus `@Override`:
 
 ```java
-public boolean existsByNombreIgnoreCase(String nombre) { return existeNombre(nombre, null); }
-```
+public boolean existsByNombreIgnoreCase(String nombre) {
+        // En bd tengo ASUS y llega asus -> true
+        // En bd tengo ASUS y llega Asus -> true
+        // En bd tengo ASUS y llega ASUS -> true
+        // En bd tengo asus y llega ASUS  -> true
+        // .......
+        String sql = "SELECT 1 FROM fabricante WHERE LOWER(nombre) = LOWER(?)";
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next(); // TRUE si encuentra el fabricante con ese nombre...
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al comprobar el nombre del fabricante: " + nombre, e);
+        }
 
-
-
-```java
-public boolean existsByNombreIgnoreCaseAndCodigoNot(String nombre, Integer codigo) { return existeNombre(nombre, codigo); }
-```
-
-
-
-```java
-private boolean existeNombre(String nombre, Integer codigo) {
-        String sql = "SELECT 1 FROM fabricante WHERE LOWER(nombre) = LOWER(?)" + (codigo == null ? "" : " AND codigo <> ?");
-        try (Connection con = dataSource.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setString(1, nombre); if (codigo != null) ps.setInt(2, codigo);
-            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
-        } catch (SQLException e) { throw new AccesoDatosException("Error al comprobar el nombre", e); }
     }
 ```
 
+```java
+public boolean existsByNombreIgnoreCaseAndCodigoNot(String nombre, Integer codigo) {
+        String sql = "SELECT 1 FROM fabricante WHERE LOWER(nombre) = LOWER(?) AND codigo <> ?";
+        try (Connection con = dataSource.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, nombre);
+            ps.setInt(2, codigo);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next(); // TRUE si encuentra el fabricante con ese nombre...
+            }
+        } catch (SQLException e) {
+            throw new AccesoDatosException("Error al comprobar el nombre del fabricante: " + nombre, e);
+        }
 
-Añade `@Override` sobre los dos métodos públicos. `LOWER` compara ambos textos en minúsculas; `codigo <> ?` excluye el código editado. `rs.next()` devuelve verdadero cuando se encuentra al menos una fila. Aunque el SQL se construye condicionalmente, los valores siguen pasando mediante `?`.
+    }
+```
+
+`LOWER` compara sin distinguir mayúsculas. `SELECT 1` solo necesita comprobar existencia y `rs.next()` indica si hay una fila. En edición, `codigo <> ?` excluye al propio fabricante. Los parámetros se asignan en orden y no se concatenan en el SQL.
+
+### Paso 3. Crear una excepción propia
 
 Crea `exception/FabricanteDuplicadoException.java`:
 
-
-
 ```java
 package es.daw.productojdbc.exception;
+
 public class FabricanteDuplicadoException extends RuntimeException {
-    public FabricanteDuplicadoException() { super("Ya existe un fabricante con ese nombre"); }
+    public FabricanteDuplicadoException(String nombre) {
+        //super("Ya existe un fabricante con el nombre: " + nombre);
+        super("Ya existe un fabricante llamado \""+nombre+"\".");
+    }
 }
 ```
 
+La excepción comunica el problema desde el servicio sin depender de la vista. El mensaje incluye el nombre solicitado.
 
-### Paso 3. Regla en el servicio y error en el formulario
+### Paso 4. Aplicar la regla en el servicio
 
-En `FabricanteService.crear`, justo después del `trim()` y antes de `save`:
-
-
-
-```java
-if (fabricanteRepository.existsByNombreIgnoreCase(fabricante.getNombre()))
-    throw new es.daw.productojdbc.exception.FabricanteDuplicadoException();
-```
-
-
-En `actualizar`, después de comprobar que existe y recortar el nombre, antes de `update`:
-
-
+En `service/FabricanteService.java`, sustituye estos dos métodos:
 
 ```java
-if (fabricanteRepository.existsByNombreIgnoreCaseAndCodigoNot(
-        fabricante.getNombre(), fabricante.getCodigo()))
-    throw new es.daw.productojdbc.exception.FabricanteDuplicadoException();
+public Fabricante crear(Fabricante fabricante) {
+
+        // eliminar espacios a izq y derecha
+        fabricante.setNombre(fabricante.getNombre().strip());
+
+        // -------------- RETO 3 ------------
+        // NUEVA REGLA DE NEGOCIO: nombre único
+        // Antes de crear el fabricante, tengo que verificar que no
+        // existe ninguno con el mismo nombre
+        if (fabricanteRepository.existsByNombreIgnoreCase(fabricante.getNombre())){
+            // lanzar excepción propia
+            throw new FabricanteDuplicadoException(fabricante.getNombre());
+        }
+
+        //----------------------------------------------
+        fabricanteRepository.save(fabricante);
+        return fabricante;
+    }
 ```
-
-
-En el controlador, rodea la selección crear/actualizar con `try` y captura la excepción:
-
-
 
 ```java
-catch (es.daw.productojdbc.exception.FabricanteDuplicadoException e) {
-    result.rejectValue("nombre", "duplicado", e.getMessage());
-    return "fabricantes/formulario";
-}
+public Fabricante actualizar(Fabricante fabricante) {
+        // REGLA DE NEGOCIO PARA BUSCAR EL CÓDIGO DE FABRICANTE. SI NO EXISTE LANZA EXCEPCIÓN...
+        buscarPorCodigo(fabricante.getCodigo());
+        // REGLA DE NEGOCIO PARA ELIMINAR ESPACIOS EN EL NOMBRE DEL FABRICANTE..
+        fabricante.setNombre(fabricante.getNombre().strip());
+
+        // -------------- RETO 3 ------------
+        // NUEVA REGLA DE NEGOCIO: nombre único
+        // Antes de crear el fabricante, tengo que verificar que no
+        // existe ninguno con el mismo nombre
+        if (fabricanteRepository.existsByNombreIgnoreCaseAndCodigoNot(fabricante.getNombre(),fabricante.getCodigo())){
+            // lanzar excepción propia
+            throw new FabricanteDuplicadoException(fabricante.getNombre());
+        }
+
+        //----------------------------------------------
+
+        fabricanteRepository.update(fabricante);
+        return fabricante;
+    }
 ```
 
+`strip()` quita espacios exteriores antes de comparar y guardar. En edición se verifica primero que el código existe. Cada caso usa su consulta para no rechazar el nombre del propio registro.
 
-`rejectValue` asocia el error a `nombre`; la vista ya tiene `th:errors` para ese campo. Observa el método completo `guardar` en la solución para situar correctamente las llaves y el redirect. Prueba crear `asus`, editar Asus sin cambiarlo y editar otro fabricante para llamarlo `ASUS`. La consulta previa es didáctica: una restricción única apropiada en BD también sería necesaria para garantizar la regla con peticiones simultáneas.
+### Paso 5. Mostrar el error junto al nombre
+
+En `controller/FabricanteController.java`, sustituye `guardar`, manteniendo `@PostMapping("/guardar")`:
+
+```java
+public String guardar(@Valid @ModelAttribute FabricanteDto fabricanteDto,
+                          BindingResult result,
+                          RedirectAttributes redirectAttributes) {
+
+        if (result.hasErrors()) {
+            return "fabricantes/formulario";
+        }
+
+        try {
+            if (fabricanteDto.getCodigo() == null) {
+                Fabricante fabricante = fabricanteService.crear(FabricanteDto.toModelEntity(fabricanteDto));
+                redirectAttributes.addFlashAttribute("mensaje",
+                        "Fabricante creado con código " + fabricante.getCodigo());
+            } else {
+                Fabricante fabricante = fabricanteService.actualizar(FabricanteDto.toModelEntity(fabricanteDto));
+                redirectAttributes.addFlashAttribute("mensaje",
+                        "Fabricante " + fabricante.getCodigo() + " actualizado");
+            }
+        }
+        catch (FabricanteDuplicadoException e) {
+            result.rejectValue("nombre", "", e.getMessage());
+            return "fabricantes/formulario";
+        }
+        return "redirect:/fabricantes";
+    }
+```
+
+`rejectValue` vincula el mensaje a `nombre`; al volver a `fabricantes/formulario`, `th:errors="*{nombre}"` lo muestra sin perder el valor escrito. El formulario ya contiene ese bloque:
+
+```html
+<input id="nombre" type="text" th:field="*{nombre}" class="form-control"
+       th:classappend="${#fields.hasErrors('nombre')} ? 'is-invalid'">
+<div class="invalid-feedback" th:errors="*{nombre}">Error</div>
+```
+
+**Comprueba:** crear `asus` cuando existe `Asus`; editar un fabricante sin cambiar su nombre; intentar ponerle el nombre de otro; probar espacios exteriores. La comprobación en servicio no garantiza unicidad ante peticiones simultáneas; para ello se necesitaría también una restricción adecuada en la base.
 
 ## 6. Biblioteca: reto año de nacimiento del autor
 
@@ -516,14 +757,23 @@ typeMismatch.autorDto.anioNacimiento=Debe ser un número entero
 
 ### Paso 3. Mapper: ida y vuelta
 
-En `mapper/AutorMapper.java` añade `dto.setAnioNacimiento(autor.getAnioNacimiento());` en `toDto`. Sustituye el retorno de `toModelEntity` por:
-
-
+Abre `Biblioteca-resuelto/src/main/java/es/daw/bibliotecajdbc/mapper/AutorMapper.java`. En el proyecto resuelto **ya están hechos** ambos cambios. Si partes de `Biblioteca-original`, sustituye los dos métodos existentes por estos, sin duplicarlos:
 
 ```java
-return new Autor(dto.getId(), dto.getNombre(), dto.getAnioNacimiento());
+public AutorDto toDto(Autor autor) {
+    AutorDto dto = new AutorDto();
+    dto.setId(autor.getId());
+    dto.setNombre(autor.getNombre());
+    dto.setAnioNacimiento(autor.getAnioNacimiento()); // añadir aquí, antes del return
+    return dto;
+}
+
+public Autor toModelEntity(AutorDto dto) {
+    return new Autor(dto.getId(), dto.getNombre(), dto.getAnioNacimiento());
+}
 ```
 
+En `toDto`, `autor` contiene el dato leído de la base y `dto` lo recibe para mostrarlo. En `toModelEntity`, el constructor copia el año del formulario al modelo. Los métodos `getAnioNacimiento` y `setAnioNacimiento` los genera Lombok a partir de los campos de `Autor` y `AutorDto`; por eso no aparecen escritos a mano en esas clases.
 
 Si olvidas la primera dirección, edición/listado no reciben el año; si olvidas la segunda, el año del formulario no llega al servicio. En `LibroMapper` cambia la construcción parcial a `new Autor(dto.getAutorId(), null, null)`; más adelante el servicio busca el autor completo por su id.
 
@@ -609,62 +859,6 @@ Prueba crear y editar un autor, volver a editarlo y ver el año guardado; prueba
 
 Estos ejemplos completan los pasos anteriores. Sustituye cada método existente por el mostrado; no añadas dos métodos con la misma firma. Las anotaciones `@GetMapping`, `@PostMapping` y `@Override` se colocan justo encima del método correspondiente.
 
-### Productos: constructor del controlador del reto 2
-
-En `controller/FabricanteController.java`, añade el campo y cambia el constructor para que Spring inyecte ambos servicios:
-
-```java
-private final FabricanteService fabricanteService;
-private final es.daw.productojdbc.service.ProductoService productoService;
-
-public FabricanteController(FabricanteService fabricanteService,
-        es.daw.productojdbc.service.ProductoService productoService) {
-    this.fabricanteService = fabricanteService;
-    this.productoService = productoService;
-}
-```
-Spring proporciona las dependencias al crear el controlador. El controlador llama a servicios, que a su vez usan repositorios.
-
-### Productos: vista completa del reto 2
-
-Este es el contenido de `resources/templates/fabricantes/productos.html`. `th:if` muestra el mensaje cuando la lista está vacía; `th:unless` muestra la tabla en caso contrario:
-
-```html
-<!DOCTYPE html><html lang="es" xmlns:th="http://www.thymeleaf.org"><head th:replace="~{fragments/layout :: head('Productos del fabricante')}"></head><body><nav th:replace="~{fragments/layout :: navbar}"></nav><main class="container"><h2 th:text="'Productos de ' + ${fabricante.nombre}"></h2><p th:if="${#lists.isEmpty(productos)}">Este fabricante no tiene productos.</p><table th:unless="${#lists.isEmpty(productos)}" class="table"><thead><tr><th>Nombre</th><th>Precio</th><th>Stock</th></tr></thead><tbody><tr th:each="p : ${productos}"><td th:text="${p.nombre}"></td><td th:text="${p.precio}"></td><td th:text="${p.stock}"></td></tr></tbody></table><a th:href="@{/fabricantes}">Volver a fabricantes</a></main></body></html>
-```
-
-### Productos: método completo que muestra el error de duplicado
-
-En `controller/FabricanteController.java`, conserva `@PostMapping("/guardar")` sobre este método:
-
-```java
-public String guardar(@Valid @ModelAttribute Fabricante fabricante,
-                          BindingResult result,
-                          RedirectAttributes redirectAttributes) {
-
-        if (result.hasErrors()) {
-            return "fabricantes/formulario";
-        }
-
-        try {
-        if (fabricante.getCodigo() == null) {
-            fabricanteService.crear(fabricante);
-            redirectAttributes.addFlashAttribute("mensaje",
-                    "Fabricante creado con código " + fabricante.getCodigo());
-        } else {
-            fabricanteService.actualizar(fabricante);
-            redirectAttributes.addFlashAttribute("mensaje",
-                    "Fabricante " + fabricante.getCodigo() + " actualizado");
-        }
-        } catch (es.daw.productojdbc.exception.FabricanteDuplicadoException e) {
-            result.rejectValue("nombre", "duplicado", e.getMessage());
-            return "fabricantes/formulario";
-        }
-        return "redirect:/fabricantes";
-    }
-```
-Primero `@Valid` aplica las anotaciones del modelo y `result.hasErrors()` detiene el guardado si fallan. Después el servicio comprueba el duplicado; si existe, `rejectValue` añade el error al mismo objeto `BindingResult` y vuelve a mostrar la vista. Solo después de un guardado correcto se ejecuta el `redirect`.
-
 ### Biblioteca: escritura completa del autor
 
 En `repository/AutorRepositoryJdbc.java`, este método muestra tanto el INSERT como la recuperación del identificador autogenerado:
@@ -711,21 +905,165 @@ public Autor toModelEntity(AutorDto dto) {
 ```
 Al seguir el recorrido desde el formulario, busca `autorMapper.toModelEntity` en el controlador. En sentido inverso, al editar busca `autorMapper.toDto`: así puedes comprobar exactamente dónde se utiliza cada conversión.
 
-## 8. Plantillas mentales para otros ejercicios
+## Plantillas mentales para otros ejercicios
 
-**Nuevo dato:** tabla → datos iniciales → modelo → DTO y validación → mapper en ambas direcciones → todos los SELECT y `mapRow` que construyen el objeto → INSERT y UPDATE → formulario → lista → pruebas. Si cambia un constructor Lombok, busca todos sus usos.
+Estas plantillas son una **guía para pensar**, no una obligación de cambiar siempre todos los archivos. El orden de trabajo te ayuda a organizarte; el recorrido en ejecución explica por dónde pasa realmente la información cuando el usuario usa la aplicación. Antes de escribir, identifica qué pide el enunciado, dónde se usa el resultado y qué restricciones existen.
 
-**Nueva consulta:** interfaz → SQL con `?` → parámetros → `ResultSet`/mapeo → servicio → controlador → vista. Primero decide qué debe pasar con cero filas y con un identificador inexistente.
+### 1. Si piden un dato nuevo
 
-**Nueva regla:** identifica los datos necesarios → añade consulta si hace falta → servicio decide y lanza excepción → controlador convierte esa excepción en mensaje útil. Una validación del navegador no reemplaza la del servidor.
+**Ejemplo:** añadir `stock` a un producto. El usuario debe poder escribirlo, guardarlo, verlo y editarlo. Primero distingue si el dato debe persistir en la base o solo calcularse para una pantalla. El siguiente recorrido es para un dato que se guarda.
 
-**Depuración rápida:** columna SQL inexistente: revisa schema y SELECT. Índice de parámetro: cuenta los `?` de izquierda a derecha. Error de constructor: revisa orden y número de campos Lombok. Dato que desaparece: revisa ambos sentidos del mapper y `mapRow`. Desplegable vacío tras error: vuelve a cargar sus opciones antes de devolver el formulario. Error al reiniciar: revisa todos los INSERT si añadiste una columna NOT NULL.
+**Orden recomendado de trabajo:**
+
+```text
+schema.sql → data.sql → modelo → DTO y validación → conversión DTO/modelo
+           → JDBC: SELECT y mapeo, INSERT y UPDATE → formulario y listado → pruebas
+```
+
+1. **Tabla (`schema.sql`).** Añade la columna con el tipo y las restricciones que exige el ejercicio. Ejemplo: `stock INT NOT NULL`. Decide si permite valores vacíos, si tiene valor predeterminado y qué significa cada valor. El nombre SQL puede ser diferente del nombre Java.
+2. **Datos iniciales (`data.sql`).** Si los INSERT iniciales crean productos, deben ser compatibles con la nueva columna. Si es obligatoria y no tiene valor predeterminado, añade la columna y un valor a cada INSERT. Si no, la aplicación puede fallar al arrancar antes de abrir la web.
+3. **Modelo (`model/`).** Añade el atributo al objeto que representa la entidad; por ejemplo, `private int stock;` en `Producto`. Comprueba constructores y sus llamadas: si Lombok genera `@AllArgsConstructor`, añadir un atributo cambia el número y orden de argumentos. Busca todos los `new Producto(...)`, también en mappers y repositorios de otras entidades.
+4. **DTO y validación (`dto/`).** Si el dato se introduce o se muestra mediante DTO, añade allí la propiedad. Para stock obligatorio que admite cero, `Integer` permite distinguir un campo vacío (`null`) del 0; `@NotNull` exige valor y `@Min(0)` rechaza negativos. La validación de formulario no sustituye las restricciones de la base de datos. Si el listado usa directamente el modelo, quizá no necesita DTO.
+5. **Conversión (`mapper/` o métodos del DTO).** En el camino formulario → modelo copia el campo para que llegue al servicio; en modelo → DTO cópialo para que la edición se abra rellena. Biblioteca tiene `AutorMapper`; Productos resuelto hace conversiones dentro de `ProductoDto`. Busca los dos sentidos: añadir el atributo sin copiarlo no lo transporta automáticamente entre objetos.
+6. **Lectura (`...RepositoryJdbc`).** Incluye la columna en los `SELECT` que construyen ese objeto y léela de `ResultSet` en `mapRow`. Revisa consultas compartidas, JOIN y objetos anidados: el reto de año del autor también obliga a revisar cómo `LibroRepositoryJdbc` construye un autor dentro de un libro.
+7. **Escritura (`...RepositoryJdbc`).** Añade la columna y su `?` al `INSERT`, y el `set...` correspondiente en el orden correcto. Haz lo mismo en `UPDATE` si se puede editar. Recuenta todos los índices: empiezan en 1 y corresponden a los `?` de izquierda a derecha.
+8. **Vista (`templates/`).** Añade el campo al formulario con el mismo nombre del DTO o propiedad enlazada; muestra sus errores con `th:errors`. Si se pide verlo en una tabla, añade cabecera y celda. Revisa la vista de edición y, si procede, el `colspan` de la fila vacía.
+9. **Controlador y servicio: comprobar si cambia algo.** En stock, el controlador ya valida el DTO entero y llama a la conversión; el servicio ya pasa el producto completo. Por eso no necesitan leer el stock por separado. Si hay una URL nueva, un tratamiento especial del error o una regla de negocio nueva, sí puede hacer falta modificarlos.
+10. **Prueba el viaje completo.** Crea con un valor reconocible, comprueba la fila en la base, vuelve al listado, abre edición y verifica el valor precargado, cambia y guarda. Prueba vacío, límites válidos y no válidos. Reinicia solo teniendo en cuenta que la H2 en memoria se reinicia.
+
+**Recorrido al guardar — orden de ejecución:**
+
+```text
+Navegador: usuario escribe stock
+   → formulario envía POST
+   → Spring rellena ProductoDto y @Valid comprueba restricciones
+   → controlador: si hay errores devuelve el formulario
+   → si es válido, DTO/mapper convierte a Producto
+   → servicio aplica sus reglas y llama al repositorio
+   → JDBC hace INSERT o UPDATE con stock
+   → base de datos guarda la fila
+   → controlador redirige al listado
+```
+
+**Recorrido para mostrarlo después:**
+
+```text
+GET del listado → controlador → servicio → repositorio JDBC
+→ SELECT + ResultSet + mapRow → Producto con stock
+→ servicio → controlador / Model → plantilla → navegador
+```
+
+Para **editar**, tras la lectura el controlador convierte `Producto → DTO` y muestra el formulario relleno. Al enviarlo se repite el camino de guardado. Si solo se cambia el formulario y no el SQL, el valor no se conserva; si solo se guarda y no se lee, no se muestra después.
+
+### 2. Si piden una consulta nueva
+
+**Ejemplo:** obtener fabricantes con el número de productos. Primero concreta la pregunta: ¿cuáles son las entradas?, ¿se espera una lista, un único objeto, una cuenta o un booleano?, ¿qué pasa si no hay filas?, ¿hay que incluir fabricantes con cero productos? El resultado podría ser un DTO nuevo, como `FabricanteResumen`, sin añadir una columna a la tabla.
+
+**Orden recomendado de trabajo:**
+
+```text
+Definir resultado → interfaz del repositorio → implementación JDBC
+→ servicio → controlador → plantilla → pruebas
+```
+
+1. **Resultado y datos.** Decide el tipo devuelto (`List`, `Optional`, `int`, `boolean`...) y las propiedades necesarias. Si necesitas nombre y una cuenta calculada, un DTO de lectura puede reunir ambos. No conviertas un resultado calculado en columna persistente si el enunciado no lo pide.
+2. **Contrato (`...Repository.java`).** Declara la firma con nombre, parámetros y tipo de retorno; por ejemplo `List<FabricanteResumen> findAllWithNumProductos();`. Esto permite al servicio conocer y solicitar la operación. Si se trata de un CRUD ya heredado de `GenericRepository`, no hace falta volver a declararlo.
+3. **Implementación (`...RepositoryJdbc.java`).** Añade el mismo método con `@Override` y escribe el SQL. Si recibe datos, utiliza `?` y los `set...` apropiados; evita concatenar entradas. Para un contador que debe incluir fabricantes sin productos, revisa `LEFT JOIN` y `COUNT(p.codigo)`. Cierra recursos y transforma `SQLException` según el patrón del proyecto.
+4. **Resultado SQL a Java.** Ejecuta `executeQuery`, recorre el `ResultSet` y crea los objetos o lee la cuenta. Una lista sin filas normalmente queda vacía; una consulta de un solo elemento puede devolver `Optional.empty()`. No confundas ausencia de resultados con error técnico.
+5. **Servicio (`service/`).** Expón o coordina la consulta y aplica las comprobaciones de negocio necesarias. Por ejemplo, antes de listar productos de un fabricante por código, el servicio puede comprobar que el fabricante existe. La lista vacía para un fabricante existente y el fabricante inexistente son situaciones distintas.
+6. **Controlador (`controller/`).** Si la consulta responde a una petición web, recibe los parámetros, llama al servicio y añade el resultado a `Model` con un nombre concreto. Crea una ruta solo si se necesita una nueva; una pantalla existente puede reutilizar su ruta.
+7. **Vista (`templates/`).** Usa el mismo nombre de atributo que el controlador. Recorre la lista con `th:each`, pinta sus propiedades y decide qué mostrar cuando esté vacía. Una consulta usada solo para una regla de negocio no necesita necesariamente controlador ni vista nuevos.
+8. **Pruebas.** Comprueba valores normales, cero resultados y límites; si hay identificadores, prueba uno inexistente. Para contadores, compara un padre con varios hijos y otro sin ninguno.
+
+**Recorrido de la petición en ejecución:**
+
+```text
+GET del navegador → controlador recibe parámetros
+→ servicio comprueba y solicita datos
+→ llamada a la interfaz del repositorio
+→ implementación JDBC ejecuta SQL con parámetros
+→ ResultSet se convierte en lista / objeto / cuenta
+→ resultado vuelve al servicio y al controlador
+→ Model → plantilla → navegador
+```
+
+La interfaz **declara** lo que se puede pedir; `...Jdbc implements ...Repository` **implementa** cómo obtenerlo. Spring proporciona la implementación al servicio. Si el método solo está en JDBC, no se puede llamar mediante una variable del tipo interfaz; si solo se declara y la clase concreta no lo implementa, no cumple el contrato.
+
+### 3. Si piden una regla nueva
+
+**Ejemplo:** impedir crear dos fabricantes con el mismo nombre ignorando mayúsculas. Una regla decide si una operación está permitida o qué debe ocurrir; no es simplemente mostrar un campo. También puede cambiar cómo se edita, se borra o se trata un error.
+
+**Orden recomendado de trabajo:**
+
+```text
+Definir regla y casos → identificar datos necesarios → consulta si hace falta
+→ servicio decide → excepción o resultado → controlador comunica → vista muestra → pruebas
+```
+
+1. **Escribe la regla con ejemplos.** ¿`Asus` y `ASUS` son iguales? ¿Qué pasa si edito Asus sin cambiar su nombre? En edición, excluir el código actual evita considerar al propio registro un duplicado. Decide qué ocurre con espacios y valores vacíos según el enunciado.
+2. **Identifica dónde están los datos.** Si necesitas saber si ya hay otro registro, busca si el repositorio dispone de esa consulta. Si no, declara la firma en la interfaz y escribe la implementación JDBC. Para duplicados, el proyecto tiene consultas diferenciadas para alta y edición.
+3. **Decide en el servicio.** El servicio recibe el objeto, aplica las comprobaciones y decide si continúa o detiene la operación. Por ejemplo, ante duplicado lanza `FabricanteDuplicadoException`; si no lo hay, continúa con `save` o `update`. La consulta informa; el servicio interpreta qué significa para el negocio.
+4. **Comunica el problema.** Una excepción propia da un significado claro. El controlador puede capturarla y usar `BindingResult.rejectValue` para asociar el error al campo adecuado, manteniendo los datos del formulario. Para otros problemas puede intervenir el manejador global. Sigue el patrón que utilice el proyecto.
+5. **Muestra el mensaje.** La plantilla debe poder enseñar el error junto al campo; si hay desplegables, deben estar disponibles también al volver con errores. `messages.properties` puede centralizar textos cuando el proyecto lo usa.
+6. **Considera las restricciones de base.** Una restricción `UNIQUE` puede respaldar la integridad cuando corresponde. La comprobación previa en el servicio no garantiza por sí sola la unicidad ante peticiones concurrentes; además, su comparación de mayúsculas debe coincidir con la regla que se quiera imponer en la base.
+7. **Prueba todos los caminos.** Prueba alta válida, duplicado con mayúsculas diferentes, edición sin cambiar el nombre, edición cambiando a un nombre ocupado y tratamiento del mensaje. Comprueba también que la operación rechazada no modifica datos.
+
+**Recorrido en ejecución:**
+
+```text
+Formulario → controlador valida formato → servicio recibe la operación
+→ servicio consulta los datos necesarios al repositorio
+→ repositorio devuelve resultado → servicio decide
+   ├─ regla cumplida → guardar / modificar → redirección o resultado
+   └─ regla incumplida → excepción → controlador añade error → formulario
+```
+
+No todas las reglas requieren una consulta: una validación individual de formulario puede expresarse con anotaciones en el DTO; una regla que compara información o coordina operaciones suele necesitar lógica de servicio. En Productos se impide borrar un fabricante con productos; en Biblioteca se permite borrar un autor y la base elimina sus libros en cascada. Lo determina el enunciado.
+
+### 4. Si necesitas depurar rápidamente
+
+Depurar es localizar **el primer punto donde el resultado deja de ser el esperado**. No cambies todas las capas a la vez: reproduce el problema con un dato reconocible, sigue su recorrido y comprueba una hipótesis cada vez.
+
+**Orden recomendado:**
+
+```text
+Reproducir → leer mensaje completo → identificar fase → seguir el dato
+→ localizar primera discrepancia → corregir → repetir la prueba y casos cercanos
+```
+
+1. **Reproduce y anota.** ¿Qué URL, acción y valores has usado? ¿Esperabas ver 3 y aparece vacío? ¿Falla al arrancar, al guardar, al listar o solo al editar? Si no puedes reproducirlo, no sabes todavía si la corrección ha funcionado.
+2. **Lee el primer mensaje útil.** En la consola busca la causa concreta, clase y línea, no solo el último mensaje genérico. Un error SQL de arranque apunta a `schema.sql`/`data.sql`; un error de plantilla puede señalar un nombre de atributo; un error de compilación impide ejecutar la aplicación.
+3. **Ubica la fase y sigue el dato en el sentido adecuado.** Si no se guarda, empieza en formulario → DTO → conversión → servicio → INSERT/UPDATE. Si se guarda pero no aparece, empieza en la fila de la base → SELECT → `mapRow` → controlador → plantilla. Si se lista bien pero no se precarga al editar, revisa modelo → DTO → `th:field`.
+4. **Comprueba los puntos concretos.** Usa el depurador de IntelliJ, inspección de variables, mensajes de registro o la consola H2. Ejemplo: verifica que el DTO contiene 3, después que el modelo contiene 3 y luego el parámetro SQL. El primer salto donde cambia o desaparece reduce la búsqueda.
+5. **Corrige una causa y repite.** Guarda los archivos, vuelve a ejecutar si es necesario y prueba el mismo caso. Después prueba un caso válido, uno de error y la operación relacionada (por ejemplo, alta y edición). Recuerda que reiniciar H2 en memoria puede borrar el dato que estabas siguiendo.
+
+| Síntoma | Dónde mirar primero | Qué comprobar |
+|---|---|---|
+| Falla el arranque después de añadir columna | `schema.sql` y `data.sql` | La columna existe y todos los INSERT obligatorios aportan valor. |
+| Error de constructor | Modelo y cada `new ...` | Número, tipo y orden de parámetros; Lombok cambia el constructor generado al añadir campos. |
+| Índice de parámetro JDBC incorrecto | SQL y `set...` | Cuenta los `?` de izquierda a derecha desde 1 y compara con cada índice. |
+| Se guarda, pero no sale en el listado | Base, SELECT, `mapRow`, `Model` y plantilla | Que cada paso conserve el valor y la plantilla use el nombre correcto. |
+| Se ve en lista, pero falta al editar | `toDto`, atributo del modelo y formulario | Que la conversión copie el valor y `th:field` apunte a la propiedad correcta. |
+| Desplegable vacío al volver con errores | Controlador y método `@ModelAttribute` | Que las opciones estén en el modelo también en la rama de error. |
+| Error de validación no aparece | DTO, `@Valid`, `BindingResult`, plantilla | Que se valide el objeto correcto y `th:errors` señale el campo correcto. |
+| Consulta nueva no se puede invocar | Interfaz y servicio | Que la firma esté declarada en el tipo de la variable y coincida con la implementación. |
+
+### Esquema de repaso para el examen
+
+| Tipo de cambio | Pregunta clave | Orden para trabajar |
+|---|---|---|
+| Dato nuevo persistente | ¿Cómo viaja al guardar, leer y editar? | Tabla → datos → modelo → DTO → conversión → JDBC → vistas → pruebas. |
+| Consulta nueva | ¿Qué se pregunta y qué se devuelve si no hay resultados? | Resultado → interfaz → JDBC → servicio → controlador/vista si hacen falta → pruebas. |
+| Regla nueva | ¿Cuándo se permite o rechaza y cómo se informa? | Casos → datos/consulta → servicio → error → controlador/vista → pruebas. |
+| Depuración | ¿En qué primer punto deja de ser correcto? | Reproducir → leer error → seguir dato → localizar → corregir → volver a probar. |
+
+El orden puede variar por dependencias y no equivale al orden de ejecución. Las flechas anteriores son un mapa para no olvidar piezas; confirma siempre qué hace ya el proyecto antes de modificar una capa.
 
 ## 9. Ejecución y comprobaciones
 
 Abre una carpeta de proyecto en IntelliJ como Maven y ejecuta `ProductoJdbcApplication` o `BibliotecaJdbcApplication`. En PowerShell, dentro de la carpeta correspondiente: `./mvnw.cmd spring-boot:run`. Abre `http://localhost:8080/`. Ambas usan el puerto 8080: ejecútalas una cada vez. La primera descarga de Maven y dependencias puede necesitar conexión; después quedan en la caché local. La consola H2 está en `/h2-console`; usa la URL de `application.properties`, usuario `sa` y contraseña vacía. Al detener la aplicación, H2 en memoria pierde los cambios.
 
-Las copias resueltas se compilaron y se verificaron las pantallas principales, alta de stock, rechazo de stock negativo y fabricante duplicado, y alta y validación de año. No se probaron automáticamente todas las combinaciones posibles: utiliza las comprobaciones de cada reto para practicar.
+Utiliza las comprobaciones de cada reto para practicar y verificar también los casos vacíos y de error.
 
 Fuentes de clase: [Productos](https://github.com/profeMelola/DWES-02-2026-27/blob/main/ejercicios/ejercicio_productos_spring_jdbc.md) y [Biblioteca](https://github.com/profeMelola/DWES-02-2026-27/blob/main/ejercicios/ejercicio_biblioteca_spring_jdbc.md).
 
